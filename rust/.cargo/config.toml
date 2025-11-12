@@ -1,0 +1,4 @@
+# Disable incremental compilation to avoid hard-link warnings on file systems
+# that do not fully support Cargo's incremental cache.
+[build]
+incremental = false

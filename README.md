@@ -5,7 +5,7 @@
 
 ***Note:*** *This repo contains only the editor core, which is not usable on its own. For editors based on it, check out the list in [Frontends](#frontends).*
 
-***Workspace status (2025-11-13):*** *This fork keeps a slim Rust workspace with seven crates (`xi-core`, `xi-core-lib`, `xi-plugin-lib`, `xi-rope`, `xi-rpc`, `xi-trace`, `xi-unicode`) to support the ongoing C# port. Optional crates such as `xi-lang`, `xi-syntect-plugin`, and related benchmarks have been removed or parked. For historical context or performance benches, refer to the upstream xi-editor repository.*
+***Workspace status (2025-11-13):*** *This fork keeps a slim Rust workspace with seven crates (`xi-core`, `xi-core-lib`, `xi-plugin-lib`, `xi-rope`, `xi-rpc`, `xi-trace`, `xi-unicode`) to support the ongoing C# port. Optional crates such as `xi-lang`, `xi-syntect-plugin`, and related benchmarks have been removed or parked. `cargo check/test --workspace` now run warning-free after parking the benches and adding a local incremental toggle. For historical context or performance benches, refer to the upstream xi-editor repository.*
 
 The xi-editor project is an attempt to build a high quality text editor,
 using modern software engineering techniques. It is initially built for

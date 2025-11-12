@@ -15,6 +15,8 @@
 //! Keeping track of available plugins.
 
 use std::collections::HashMap;
+use std::error::Error as StdError;
+use std::fmt;
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
@@ -54,7 +56,7 @@ impl<'a> PluginCatalog {
         let all_manifests = find_all_manifests(paths);
         for manifest_path in &all_manifests {
             match load_manifest(manifest_path) {
-                Err(e) => warn!("error loading plugin {:?}", e),
+                Err(e) => warn!("error loading plugin {}", e),
                 Ok(manifest) => {
                     info!("loaded {}", manifest.name);
                     let manifest = Arc::new(manifest);
@@ -155,5 +157,23 @@ impl From<io::Error> for PluginLoadError {
 impl From<toml::de::Error> for PluginLoadError {
     fn from(err: toml::de::Error) -> PluginLoadError {
         PluginLoadError::Parse(err)
+    }
+}
+
+impl fmt::Display for PluginLoadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PluginLoadError::Io(err) => write!(f, "plugin IO error: {}", err),
+            PluginLoadError::Parse(err) => write!(f, "plugin manifest parse error: {}", err),
+        }
+    }
+}
+
+impl StdError for PluginLoadError {
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        match self {
+            PluginLoadError::Io(err) => Some(err),
+            PluginLoadError::Parse(err) => Some(err),
+        }
     }
 }
