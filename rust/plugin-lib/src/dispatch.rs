@@ -21,7 +21,8 @@ use crate::core_proxy::CoreProxy;
 use crate::xi_core::plugin_rpc::{HostNotification, HostRequest, PluginBufferInfo, PluginUpdate};
 use crate::xi_core::{ConfigTable, LanguageId, PluginPid, ViewId};
 use xi_rpc::{Handler as RpcHandler, RemoteError, RpcCtx};
-use xi_trace::{self, trace, trace_block, trace_block_payload};
+
+use crate::trace::{trace, trace_block, trace_block_payload};
 
 use super::{Plugin, View};
 
@@ -143,11 +144,11 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
 
     fn do_tracing_config(&mut self, enabled: bool) {
         if enabled {
-            xi_trace::enable_tracing();
+            crate::trace::enable_tracing();
             info!("Enabling tracing in global plugin {:?}", self.pid);
             trace("enable tracing", &["plugin"]);
         } else {
-            xi_trace::disable_tracing();
+            crate::trace::disable_tracing();
             info!("Disabling tracing in global plugin {:?}", self.pid);
             trace("disable tracing", &["plugin"]);
         }
@@ -173,9 +174,9 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
     }
 
     fn do_collect_trace(&self) -> Result<Value, RemoteError> {
-        use xi_trace::chrome_trace_dump;
+        use crate::trace::chrome_trace_dump;
 
-        let samples = xi_trace::samples_cloned_unsorted();
+        let samples = crate::trace::samples_cloned_unsorted();
         chrome_trace_dump::to_value(&samples).map_err(|e| RemoteError::Custom {
             code: 0,
             message: format!("Could not serialize trace: {:?}", e),

@@ -24,7 +24,7 @@ use xi_core_lib::annotations::AnnotationType;
 use xi_core_lib::plugin_rpc::DataSpan;
 use xi_rope::interval::IntervalBounds;
 use xi_rope::RopeDelta;
-use xi_trace::trace_block;
+use crate::trace::trace_block;
 
 use xi_rpc::RpcPeer;
 

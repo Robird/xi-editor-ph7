@@ -29,6 +29,7 @@ extern crate serde_json;
 extern crate serde_derive;
 extern crate crossbeam_utils;
 extern crate serde;
+#[cfg(feature = "trace")]
 extern crate xi_trace;
 
 #[macro_use]
@@ -36,6 +37,7 @@ extern crate log;
 
 mod error;
 mod parse;
+pub mod trace;
 
 pub mod test_utils;
 
@@ -51,7 +53,7 @@ use std::time::{Duration, Instant};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use xi_trace::{trace, trace_block, trace_block_payload, trace_payload};
+use crate::trace::{trace, trace_block, trace_block_payload, trace_payload};
 
 pub use crate::error::{Error, ReadError, RemoteError};
 use crate::parse::{Call, MessageReader, Response, RpcObject};

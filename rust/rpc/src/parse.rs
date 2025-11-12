@@ -20,6 +20,7 @@ use serde::de::DeserializeOwned;
 use serde_json::{Error as JsonError, Value};
 
 use crate::error::{ReadError, RemoteError};
+use crate::trace::trace_block;
 
 /// A unique identifier attached to request RPCs.
 type RequestId = u64;
@@ -77,7 +78,7 @@ impl MessageReader {
     /// This should not be called directly unless you are writing tests.
     #[doc(hidden)]
     pub fn parse(&self, s: &str) -> Result<RpcObject, ReadError> {
-        let _trace = xi_trace::trace_block("parse", &["rpc"]);
+        let _trace = trace_block("parse", &["rpc"]);
         let val = serde_json::from_str::<Value>(s)?;
         if !val.is_object() {
             Err(ReadError::NotObject)

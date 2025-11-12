@@ -16,6 +16,7 @@
 extern crate xi_core_lib as xi_core;
 extern crate xi_rope;
 extern crate xi_rpc;
+#[cfg(feature = "trace")]
 extern crate xi_trace;
 #[macro_use]
 extern crate serde_json;
@@ -32,6 +33,7 @@ mod core_proxy;
 mod dispatch;
 mod state_cache;
 mod view;
+pub mod trace;
 
 use std::io;
 use std::path::Path;

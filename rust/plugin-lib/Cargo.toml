@@ -19,6 +19,7 @@ log = "0.4.3"
 
 [dependencies.xi-trace]
 path = "../trace"
+optional = true
 
 [dependencies.xi-rpc]
 path = "../rpc"
@@ -28,3 +29,7 @@ path = "../core-lib"
 
 [dependencies.xi-rope]
 path = "../rope"
+
+[features]
+trace = ["xi-trace"]
+default = ["trace"]

@@ -15,4 +15,8 @@ serde_json = "1.0"
 serde_derive = "1.0"
 crossbeam-utils = "0.8"
 
-xi-trace = { path = "../trace", version = "0.2.0" }
+xi-trace = { path = "../trace", version = "0.2.0", optional = true }
+
+[features]
+trace = ["xi-trace"]
+default = ["trace"]
