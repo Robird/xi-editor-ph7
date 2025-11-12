@@ -664,7 +664,7 @@ impl Editor {
         view.update_annotations(plugin, iv, Annotations { items: spans, annotation_type });
     }
 
-    pub(crate) fn get_rev(&self, rev: RevToken) -> Option<Cow<Rope>> {
+    pub(crate) fn get_rev(&self, rev: RevToken) -> Option<Cow<'_, Rope>> {
         let text_cow = if rev == self.engine.get_head_rev_id().token() {
             Cow::Borrowed(&self.text)
         } else {

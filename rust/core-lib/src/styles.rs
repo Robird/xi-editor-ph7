@@ -198,7 +198,7 @@ impl ThemeStyleMap {
         &self.default_style
     }
 
-    pub fn get_highlighter(&self) -> Highlighter {
+    pub fn get_highlighter(&self) -> Highlighter<'_> {
         Highlighter::new(&self.theme)
     }
 

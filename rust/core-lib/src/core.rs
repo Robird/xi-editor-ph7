@@ -58,7 +58,7 @@ impl XiCore {
     /// # Panics
     ///
     /// Panics if core has not yet received the `client_started` message.
-    pub fn inner(&self) -> MutexGuard<CoreState> {
+    pub fn inner(&self) -> MutexGuard<'_, CoreState> {
         match self {
             XiCore::Running(ref inner) => inner.lock().unwrap(),
             XiCore::Waiting => panic!(
