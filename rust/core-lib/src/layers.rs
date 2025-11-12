@@ -24,7 +24,7 @@ use syntect::parsing::Scope;
 
 use xi_rope::spans::{Spans, SpansBuilder};
 use xi_rope::{Interval, RopeDelta};
-use xi_trace::trace_block;
+use crate::trace::trace_block;
 
 use crate::plugins::PluginPid;
 use crate::styles::{Style, ThemeStyleMap};

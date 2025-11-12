@@ -48,6 +48,7 @@ extern crate toml;
 
 extern crate xi_rope;
 extern crate xi_rpc;
+#[cfg(feature = "trace")]
 extern crate xi_trace;
 extern crate xi_unicode;
 
@@ -90,6 +91,7 @@ pub mod selection;
 pub mod styles;
 pub mod syntax;
 pub mod tabs;
+pub mod trace;
 pub mod view;
 #[cfg(feature = "notify")]
 pub mod watcher;

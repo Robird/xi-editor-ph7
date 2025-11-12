@@ -88,8 +88,8 @@ impl Handler for XiCore {
         // We allow tracing to be enabled before event `client_started`
         if let TracingConfig { enabled } = rpc {
             match enabled {
-                true => xi_trace::enable_tracing(),
-                false => xi_trace::disable_tracing(),
+                true => crate::trace::enable_tracing(),
+                false => crate::trace::disable_tracing(),
             }
             info!("tracing in core = {:?}", enabled);
             if self.is_waiting() {
@@ -155,7 +155,7 @@ impl WeakXiCore {
         response: Result<Value, RpcError>,
     ) {
         if let Some(core) = self.upgrade() {
-            let _t = xi_trace::trace_block("WeakXiCore::plugin_update", &["core"]);
+            let _t = crate::trace::trace_block("WeakXiCore::plugin_update", &["core"]);
             core.inner().plugin_update(plugin, view, response);
         }
     }

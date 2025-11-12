@@ -186,7 +186,7 @@ pub(crate) fn start_plugin_process(
                     let plugin = Plugin { peer, process: child, name, id };
 
                     // set tracing immediately
-                    if xi_trace::is_enabled() {
+                    if crate::trace::is_enabled() {
                         plugin.toggle_tracing(true);
                     }
 

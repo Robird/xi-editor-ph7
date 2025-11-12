@@ -33,7 +33,7 @@ use serde_json::Value;
 
 use xi_rope::Rope;
 use xi_rpc::{self, ReadError, RemoteError, RpcCtx, RpcPeer};
-use xi_trace::{self, trace_block};
+use crate::trace::trace_block;
 
 use crate::client::Client;
 use crate::config::{self, ConfigDomain, ConfigDomainExternal, ConfigManager, Table};
@@ -882,12 +882,14 @@ impl CoreState {
         self.running_plugins.iter().for_each(|plugin| plugin.toggle_tracing(enabled))
     }
 
+    #[cfg(feature = "trace")]
     fn save_trace<P>(&self, path: P, frontend_samples: Value)
     where
         P: AsRef<Path>,
     {
-        use xi_trace::chrome_trace_dump;
-        let mut all_traces = xi_trace::samples_cloned_unsorted();
+        use crate::trace::chrome_trace_dump;
+
+        let mut all_traces = crate::trace::samples_cloned_unsorted();
         if let Ok(mut traces) = chrome_trace_dump::decode(frontend_samples) {
             all_traces.append(&mut traces);
         }
@@ -915,6 +917,14 @@ impl CoreState {
         if let Err(e) = chrome_trace_dump::serialize(&all_traces, &mut trace_file) {
             error!("error saving trace {:?}", e);
         }
+    }
+
+    #[cfg(not(feature = "trace"))]
+    fn save_trace<P>(&self, _path: P, _frontend_samples: Value)
+    where
+        P: AsRef<Path>,
+    {
+        warn!("Trace support is disabled; ignoring save_trace request");
     }
 }
 

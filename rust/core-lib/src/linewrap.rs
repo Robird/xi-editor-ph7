@@ -20,7 +20,7 @@ use std::ops::Range;
 use xi_rope::breaks::{BreakBuilder, Breaks, BreaksInfo, BreaksMetric};
 use xi_rope::spans::Spans;
 use xi_rope::{Cursor, Interval, LinesMetric, Rope, RopeDelta, RopeInfo};
-use xi_trace::trace_block;
+use crate::trace::trace_block;
 use xi_unicode::LineBreakLeafIter;
 
 use crate::client::Client;

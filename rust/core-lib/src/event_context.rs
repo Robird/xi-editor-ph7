@@ -24,7 +24,7 @@ use serde_json::{self, Value};
 
 use xi_rope::{Cursor, Interval, LinesMetric, Rope, RopeDelta};
 use xi_rpc::{Error as RpcError, RemoteError};
-use xi_trace::trace_block;
+use crate::trace::trace_block;
 
 use crate::plugins::rpc::{
     ClientPluginInfo, Hover, PluginBufferInfo, PluginNotification, PluginRequest, PluginUpdate,

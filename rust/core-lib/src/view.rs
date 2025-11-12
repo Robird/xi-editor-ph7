@@ -36,7 +36,7 @@ use crate::width_cache::WidthCache;
 use crate::word_boundaries::WordCursor;
 use xi_rope::spans::Spans;
 use xi_rope::{Cursor, Interval, LinesMetric, Rope, RopeDelta};
-use xi_trace::trace_block;
+use crate::trace::trace_block;
 
 type StyleMap = RefCell<ThemeStyleMap>;
 
