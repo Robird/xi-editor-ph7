@@ -95,12 +95,12 @@ impl<T> FixedLifoDeque<T> {
     }
 
     #[inline]
-    pub fn iter(&self) -> Iter<T> {
+    pub fn iter(&self) -> Iter<'_, T> {
         self.storage.iter()
     }
 
     #[inline]
-    pub fn iter_mut(&mut self) -> IterMut<T> {
+    pub fn iter_mut(&mut self) -> IterMut<'_, T> {
         self.storage.iter_mut()
     }
 
@@ -129,7 +129,7 @@ impl<T> FixedLifoDeque<T> {
     }
 
     #[inline]
-    pub fn drain<R>(&mut self, range: R) -> Drain<T>
+    pub fn drain<R>(&mut self, range: R) -> Drain<'_, T>
     where
         R: RangeBounds<usize>,
     {
@@ -347,8 +347,6 @@ impl<'a, T: 'a + Copy> Extend<&'a T> for FixedLifoDeque<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(feature = "benchmarks")]
-    use test::Bencher;
 
     #[test]
     fn test_basic_insertions() {
@@ -378,27 +376,4 @@ mod tests {
         assert_eq!(tester[2], 4);
     }
 
-    #[cfg(feature = "benchmarks")]
-    #[bench]
-    fn bench_push_back(b: &mut Bencher) {
-        let mut q = FixedLifoDeque::with_limit(10);
-        b.iter(|| q.push_back(5));
-    }
-
-    #[cfg(feature = "benchmarks")]
-    #[bench]
-    fn bench_deletion_from_empty(b: &mut Bencher) {
-        let mut q = FixedLifoDeque::<u32>::with_limit(10000);
-        b.iter(|| q.pop_front());
-    }
-
-    #[cfg(feature = "benchmarks")]
-    #[bench]
-    fn bench_deletion_from_non_empty(b: &mut Bencher) {
-        let mut q = FixedLifoDeque::with_limit(1000000);
-        for i in 0..q.limit() {
-            q.push_back(i);
-        }
-        b.iter(|| q.pop_front());
-    }
 }

@@ -11,12 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#![cfg_attr(feature = "benchmarks", feature(test))]
 #![allow(clippy::identity_op, clippy::new_without_default, clippy::trivially_copy_pass_by_ref)]
 
 #[macro_use]
 extern crate lazy_static;
-extern crate time;
+// Use std::time::Instant for monotonic timestamps instead of the deprecated
+// `time::precise_time_ns` function from the time crate.
+use std::time::Instant;
 
 #[macro_use]
 extern crate serde_derive;
@@ -28,10 +29,7 @@ extern crate log;
 
 extern crate libc;
 
-#[cfg(feature = "benchmarks")]
-extern crate test;
-
-#[cfg(any(test, feature = "json_payload", feature = "chroma_trace_dump"))]
+#[cfg(any(test, feature = "json_payload", feature = "chrome_trace_event"))]
 #[cfg_attr(any(test), macro_use)]
 extern crate serde_json;
 
@@ -120,6 +118,17 @@ impl serde::Serialize for CategoriesT {
     {
         self.join(",").serialize(serializer)
     }
+}
+
+lazy_static! {
+    // Reference instant used for producing process-local monotonic timestamps.
+    static ref START_INSTANT: Instant = Instant::now();
+}
+
+#[inline]
+fn now_ns() -> u64 {
+    let d = START_INSTANT.elapsed();
+    d.as_secs().saturating_mul(1_000_000_000) + d.subsec_nanos() as u64
 }
 
 impl<'de> serde::Deserialize<'de> for CategoriesT {
@@ -212,11 +221,9 @@ impl Config {
         Self { sample_limit_count: limit }
     }
 
+    // Note: prefer `Default` trait impl for the type; keep the inherent
+    // method removed to avoid ambiguity and clippy `should_implement_trait`.
     /// The default amount of storage to allocate for tracing.  Currently 1 MB.
-    pub fn default() -> Self {
-        // 1 MB
-        Self::with_limit_bytes(1 * 1024 * 1024)
-    }
 
     /// The maximum amount of space the tracing data will take up.  This does
     /// not account for any overhead of storing the data itself (i.e. pointer to
@@ -228,6 +235,12 @@ impl Config {
     /// The maximum number of samples that should be stored.
     pub fn max_samples(self) -> usize {
         self.sample_limit_count
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self::with_limit_bytes(1 * 1024 * 1024)
     }
 }
 
@@ -441,7 +454,7 @@ impl Sample {
         Self {
             name: name.into(),
             categories: Some(categories.into()),
-            timestamp_us: ns_to_us(time::precise_time_ns()),
+            timestamp_us: ns_to_us(now_ns()),
             event_type,
             duration_us: None,
             tid: sys_tid::current_tid().unwrap(),
@@ -485,7 +498,7 @@ impl Sample {
         Self {
             name: name.into(),
             categories: Some(categories.into()),
-            timestamp_us: ns_to_us(time::precise_time_ns()),
+            timestamp_us: ns_to_us(now_ns()),
             event_type: SampleEventType::Instant,
             duration_us: None,
             tid: sys_tid::current_tid().unwrap(),
@@ -588,7 +601,7 @@ impl<'a> Drop for SampleGuard<'a> {
     fn drop(&mut self) {
         if let Some(ref mut trace) = self.trace {
             let mut sample = self.sample.take().unwrap();
-            sample.timestamp_us = ns_to_us(time::precise_time_ns());
+            sample.timestamp_us = ns_to_us(now_ns());
             sample.event_type = SampleEventType::DurationEnd;
             trace.record(sample);
         }
@@ -697,7 +710,7 @@ impl Trace {
         }
     }
 
-    pub fn block<S, C>(&self, name: S, categories: C) -> SampleGuard
+    pub fn block<S, C>(&self, name: S, categories: C) -> SampleGuard<'_>
     where
         S: Into<StrCow>,
         C: Into<CategoriesT>,
@@ -709,7 +722,7 @@ impl Trace {
         }
     }
 
-    pub fn block_payload<S, C, P>(&self, name: S, categories: C, payload: P) -> SampleGuard
+    pub fn block_payload<S, C, P>(&self, name: S, categories: C, payload: P) -> SampleGuard<'_>
     where
         S: Into<StrCow>,
         C: Into<CategoriesT>,
@@ -729,9 +742,9 @@ impl Trace {
         F: FnOnce() -> R,
     {
         // TODO: simplify this through the use of scopeguard crate
-        let start = time::precise_time_ns();
+    let start = now_ns();
         let result = closure();
-        let end = time::precise_time_ns();
+    let end = now_ns();
         if self.is_enabled() {
             self.record(Sample::new_duration(name, categories, None, start, end - start));
         }
@@ -752,9 +765,9 @@ impl Trace {
         F: FnOnce() -> R,
     {
         // TODO: simplify this through the use of scopeguard crate
-        let start = time::precise_time_ns();
+    let start = now_ns();
         let result = closure();
-        let end = time::precise_time_ns();
+    let end = now_ns();
         if self.is_enabled() {
             self.record(Sample::new_duration(
                 name,
@@ -823,7 +836,7 @@ impl Trace {
             return Err(chrome_trace_dump::Error::already_exists());
         }
 
-        let mut trace_file = fs::File::create(&path)?;
+        let mut trace_file = fs::File::create(path)?;
 
         chrome_trace_dump::serialize(&traces, &mut trace_file)
     }
@@ -870,12 +883,12 @@ pub fn is_enabled() -> bool {
 /// # Arguments
 ///
 /// * `name` - A string that provides some meaningful name to this sample.
-/// Usage of static strings is encouraged for best performance to avoid copies.
-/// However, anything that can be converted into a Cow string can be passed as
-/// an argument.
+///   Usage of static strings is encouraged for best performance to avoid copies.
+///   However, anything that can be converted into a Cow string can be passed as
+///   an argument.
 ///
 /// * `categories` - A static array of static strings that tags the samples in
-/// some way.
+///   some way.
 ///
 /// # Examples
 ///
@@ -908,12 +921,12 @@ where
 /// # Arguments
 ///
 /// * `name` - A string that provides some meaningful name to this sample.
-/// Usage of static strings is encouraged for best performance to avoid copies.
-/// However, anything that can be converted into a Cow string can be passed as
+///   Usage of static strings is encouraged for best performance to avoid copies.
+///   However, anything that can be converted into a Cow string can be passed as
 /// an argument.
 ///
 /// * `categories` - A static array of static strings that tags the samples in
-/// some way.
+///   some way.
 ///
 /// # Examples
 ///
@@ -945,12 +958,12 @@ where
 /// # Arguments
 ///
 /// * `name` - A string that provides some meaningful name to this sample.
-/// Usage of static strings is encouraged for best performance to avoid copies.
-/// However, anything that can be converted into a Cow string can be passed as
+///   Usage of static strings is encouraged for best performance to avoid copies.
+///   However, anything that can be converted into a Cow string can be passed as
 /// an argument.
 ///
 /// * `categories` - A static array of static strings that tags the samples in
-/// some way.
+///   some way.
 ///
 /// # Returns
 /// A guard that when dropped will update the Sample with the timestamp & then
@@ -1003,12 +1016,12 @@ where
 /// # Arguments
 ///
 /// * `name` - A string that provides some meaningful name to this sample.
-/// Usage of static strings is encouraged for best performance to avoid copies.
+///   Usage of static strings is encouraged for best performance to avoid copies.
 /// However, anything that can be converted into a Cow string can be passed as
 /// an argument.
 ///
 /// * `categories` - A static array of static strings that tags the samples in
-/// some way.
+///   some way.
 ///
 /// # Returns
 /// The result of the closure.
@@ -1062,12 +1075,12 @@ pub fn samples_len() -> usize {
 /// samples are ordered chronologically for several reasons:
 ///
 /// 1. Samples that span sections of code may be inserted on end instead of
-/// beginning.
+///    beginning.
 /// 2. Performance optimizations might have per-thread buffers.  Keeping all
-/// that sorted would be prohibitively expensive.
+///    that sorted would be prohibitively expensive.
 /// 3. You may not care about them always being sorted if you're merging samples
-/// from multiple distributed sources (i.e. you want to sort the merged result
-/// rather than just this processe's samples).
+///    from multiple distributed sources (i.e. you want to sort the merged result
+///    rather than just this processe's samples).
 #[inline]
 pub fn samples_cloned_unsorted() -> Vec<Sample> {
     TRACE.samples_cloned_unsorted()
@@ -1094,10 +1107,8 @@ pub fn save<P: AsRef<Path>>(path: P, sort: bool) -> Result<(), chrome_trace_dump
 #[rustfmt::skip]
 mod tests {
     use super::*;
-    #[cfg(feature = "benchmarks")]
-    use test::Bencher;
-    #[cfg(feature = "benchmarks")]
-    use test::black_box;
+    // Criterion benches live in `benches/` and the nightly `test` harness is
+    // intentionally not used here to avoid `E0658` on stable toolchains.
 
     #[cfg(not(feature = "json_payload"))]
     fn to_payload(value: &'static str) -> &'static str {
@@ -1298,109 +1309,6 @@ mod tests {
         assert_eq!(samples[1].name, "local pid");
     }
 
-    #[cfg(feature = "benchmarks")]
-    #[bench]
-    fn bench_trace_instant_disabled(b: &mut Bencher) {
-        let trace = Trace::disabled();
-
-        b.iter(|| black_box(trace.instant("nothing", &["benchmark"])));
-    }
-
-    #[cfg(feature = "benchmarks")]
-    #[bench]
-    fn bench_trace_instant(b: &mut Bencher) {
-        let trace = Trace::enabled(Config::default());
-        b.iter(|| black_box(trace.instant("something", &["benchmark"])));
-    }
-
-    #[cfg(feature = "benchmarks")]
-    #[bench]
-    fn bench_trace_instant_with_payload(b: &mut Bencher) {
-        let trace = Trace::enabled(Config::default());
-        b.iter(|| black_box(trace.instant_payload(
-            "something", &["benchmark"],
-            to_payload("some description of the trace"))));
-    }
-
-    #[cfg(feature = "benchmarks")]
-    #[bench]
-    fn bench_trace_block_disabled(b: &mut Bencher) {
-        let trace = Trace::disabled();
-        b.iter(|| black_box(trace.block("something", &["benchmark"])));
-    }
-
-    #[cfg(feature = "benchmarks")]
-    #[bench]
-    fn bench_trace_block(b: &mut Bencher) {
-        let trace = Trace::enabled(Config::default());
-        b.iter(|| black_box(trace.block("something", &["benchmark"])));
-    }
-
-
-    #[cfg(feature = "benchmarks")]
-    #[bench]
-    fn bench_trace_block_payload(b: &mut Bencher) {
-        let trace = Trace::enabled(Config::default());
-        b.iter(|| {
-            black_box(|| {
-                let _ = trace.block_payload(
-                    "something", &["benchmark"],
-                    to_payload("some payload for the block"));
-            });
-        });
-    }
-
-    #[cfg(feature = "benchmarks")]
-    #[bench]
-    fn bench_trace_closure_disabled(b: &mut Bencher) {
-        let trace = Trace::disabled();
-
-        b.iter(|| black_box(trace.closure("something", &["benchmark"], || {})));
-    }
-
-    #[cfg(feature = "benchmarks")]
-    #[bench]
-    fn bench_trace_closure(b: &mut Bencher) {
-        let trace = Trace::enabled(Config::default());
-        b.iter(|| black_box(trace.closure("something", &["benchmark"], || {})));
-    }
-
-    #[cfg(feature = "benchmarks")]
-    #[bench]
-    fn bench_trace_closure_payload(b: &mut Bencher) {
-        let trace = Trace::enabled(Config::default());
-        b.iter(|| black_box(trace.closure_payload(
-                    "something", &["benchmark"], || {},
-                    to_payload("some description of the closure"))));
-    }
-
-    // this is the cost contributed by the timestamp to trace()
-    #[cfg(feature = "benchmarks")]
-    #[bench]
-    fn bench_single_timestamp(b: &mut Bencher) {
-        b.iter(|| black_box(time::precise_time_ns()));
-    }
-
-    // this is the cost contributed by the timestamp to
-    // trace_block()/trace_closure
-    #[cfg(feature = "benchmarks")]
-    #[bench]
-    fn bench_two_timestamps(b: &mut Bencher) {
-        b.iter(|| {
-            black_box(time::precise_time_ns());
-            black_box(time::precise_time_ns());
-        });
-    }
-
-    #[cfg(feature = "benchmarks")]
-    #[bench]
-    fn bench_get_tid(b: &mut Bencher) {
-        b.iter(|| black_box(sys_tid::current_tid()));
-    }
-
-    #[cfg(feature = "benchmarks")]
-    #[bench]
-    fn bench_get_pid(b: &mut Bencher) {
-        b.iter(|| sys_pid::current_pid());
-    }
+    // Criterion benches that replace the old `#[bench]` tests are provided
+    // in `benches/`; keep the generated unit tests here only.
 }

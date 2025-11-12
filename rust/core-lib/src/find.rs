@@ -15,7 +15,6 @@
 //! Module for searching text.
 
 use std::cmp::{max, min};
-use std::iter;
 
 use crate::annotations::{AnnotationRange, AnnotationSlice, AnnotationType, ToAnnotation};
 use crate::line_offset::LineOffset;
@@ -329,7 +328,7 @@ impl Find {
         wrapped: bool,
         sel: &Selection,
     ) -> Option<SelRegion> {
-        if self.occurrences.len() == 0 {
+        if self.occurrences.is_empty() {
             return None;
         }
 
@@ -422,7 +421,7 @@ impl ToAnnotation for Find {
             })
             .collect::<Vec<AnnotationRange>>();
 
-        let payload = iter::repeat(json!({"id": self.id})).take(ranges.len()).collect::<Vec<_>>();
+        let payload = std::iter::repeat_n(json!({"id": self.id}), ranges.len()).collect::<Vec<_>>();
 
         AnnotationSlice::new(AnnotationType::Find, ranges, Some(payload))
     }

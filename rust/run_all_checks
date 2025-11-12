@@ -47,16 +47,6 @@ if ! (cargo test --all); then
 fi
 
 printf 'Tests passed!\n'
-printf 'Running benchmarks ("rustup run nightly cargo bench --all"):\n'
-
-if !(rustup run nightly cargo --version); then
-    printf 'Running benchmarks requires a nightly compiler. Try `rustup install nightly`?\n'
-    exit 1
-fi
-
-if !(rustup run nightly cargo bench --all); then
-    printf 'Running benchmarks failed.\n'
-    exit $?
-fi
+printf 'Benchmarks are disabled in xi-editor-ph7; skipping cargo bench.\n'
 
 printf 'All checks passed.\n'

@@ -227,7 +227,7 @@ impl<'a> RopeScanner<'a> {
     where
         T: Into<Option<usize>>,
     {
-        let stop = stop.into().unwrap_or(usize::max_value());
+    let stop = stop.into().unwrap_or(usize::MAX);
         self.base.set(base_off);
         self.target.set(targ_off);
         self.scanned = 0;
@@ -294,7 +294,7 @@ impl<'a> RopeScanner<'a> {
     where
         T: Into<Option<usize>>,
     {
-        let stop = stop.into().unwrap_or(usize::max_value());
+    let stop = stop.into().unwrap_or(usize::MAX);
         self.base.set(base_off);
         self.target.set(targ_off);
         self.scanned = 0;
@@ -495,7 +495,7 @@ mod tests {
 
     fn make_lines(n: usize) -> String {
         let mut s = String::with_capacity(n * 81);
-        let line: String = iter::repeat('a').take(79).chain(iter::once('\n')).collect();
+        let line: String = std::iter::repeat_n('a', 79).chain(iter::once('\n')).collect();
         for _ in 0..n {
             s.push_str(&line);
         }

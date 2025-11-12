@@ -21,6 +21,42 @@ use serde::ser::{Serialize, SerializeStruct, SerializeTupleVariant, Serializer};
 use crate::tree::Node;
 use crate::{Delta, DeltaElement, Rope, RopeInfo};
 
+// Interim serializable types used for (de)serializing `Delta<RopeInfo>`.
+// These are defined at module-level so derive macros generate impls at the
+// correct (non-nested) scope; this avoids `non_local_definitions` lint
+// failures when serde attributes are used inside function bodies.
+#[cfg(feature = "serde")]
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[allow(clippy::non_local_definitions)]
+enum RopeDeltaElement_ {
+    Copy(usize, usize),
+    Insert(Node<RopeInfo>),
+}
+
+#[cfg(feature = "serde")]
+#[derive(Serialize, Deserialize)]
+#[allow(clippy::non_local_definitions)]
+struct RopeDelta_ {
+    els: Vec<RopeDeltaElement_>,
+    base_len: usize,
+}
+
+impl From<RopeDeltaElement_> for DeltaElement<RopeInfo> {
+    fn from(elem: RopeDeltaElement_) -> DeltaElement<RopeInfo> {
+        match elem {
+            RopeDeltaElement_::Copy(start, end) => DeltaElement::Copy(start, end),
+            RopeDeltaElement_::Insert(rope) => DeltaElement::Insert(rope),
+        }
+    }
+}
+
+impl From<RopeDelta_> for Delta<RopeInfo> {
+    fn from(mut delta: RopeDelta_) -> Delta<RopeInfo> {
+        Delta { els: delta.els.drain(..).map(DeltaElement::from).collect(), base_len: delta.base_len }
+    }
+}
+
 impl Serialize for Rope {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -92,38 +128,10 @@ impl<'de> Deserialize<'de> for Delta<RopeInfo> {
     where
         D: Deserializer<'de>,
     {
-        // NOTE: we derive to an interim representation and then convert
-        // that into our actual target.
-        #[derive(Serialize, Deserialize)]
-        #[serde(rename_all = "snake_case")]
-        enum RopeDeltaElement_ {
-            Copy(usize, usize),
-            Insert(Node<RopeInfo>),
-        }
+        // NOTE: we use interim representation types (defined at module-level)
+        // for (de)serialization and then convert it into our actual target.
 
-        #[derive(Serialize, Deserialize)]
-        struct RopeDelta_ {
-            els: Vec<RopeDeltaElement_>,
-            base_len: usize,
-        }
-
-        impl From<RopeDeltaElement_> for DeltaElement<RopeInfo> {
-            fn from(elem: RopeDeltaElement_) -> DeltaElement<RopeInfo> {
-                match elem {
-                    RopeDeltaElement_::Copy(start, end) => DeltaElement::Copy(start, end),
-                    RopeDeltaElement_::Insert(rope) => DeltaElement::Insert(rope),
-                }
-            }
-        }
-
-        impl From<RopeDelta_> for Delta<RopeInfo> {
-            fn from(mut delta: RopeDelta_) -> Delta<RopeInfo> {
-                Delta {
-                    els: delta.els.drain(..).map(DeltaElement::from).collect(),
-                    base_len: delta.base_len,
-                }
-            }
-        }
+        
         let d = RopeDelta_::deserialize(deserializer)?;
         Ok(Delta::from(d))
     }

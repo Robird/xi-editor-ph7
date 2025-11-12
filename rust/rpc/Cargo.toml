@@ -6,6 +6,7 @@ authors = ["Raph Levien <raph@google.com>"]
 repository = "https://github.com/google/xi-editor"
 description = "Utilities for building peers (both client and server side) for xi's JSON RPC variant."
 edition = '2018'
+rust-version = "1.75"
 
 [dependencies]
 log = "0.4.3"

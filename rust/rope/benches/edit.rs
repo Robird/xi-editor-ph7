@@ -11,12 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#![feature(test)]
-
-extern crate test;
 extern crate xi_rope;
 
-use test::Bencher;
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use xi_rope::rope::Rope;
 
 fn build_triangle(n: usize) -> String {
@@ -50,105 +47,31 @@ fn build_few_big_lines(size: usize) -> String {
     s
 }
 
-#[bench]
-fn benchmark_file_load_short_lines(b: &mut Bencher) {
+fn benchmark_file_load_short_lines(c: &mut Criterion) {
     let text = build_short_lines(50_000);
-    b.iter(|| {
-        Rope::from(&text);
-    });
+    c.bench_function("benchmark_file_load_short_lines", |b| b.iter(|| {
+        Rope::from(black_box(&text));
+    }));
 }
 
-#[bench]
-fn benchmark_file_load_few_big_lines(b: &mut Bencher) {
+fn benchmark_file_load_few_big_lines(c: &mut Criterion) {
     let text = build_few_big_lines(1_000_000);
-    b.iter(|| {
-        Rope::from(&text);
-    });
+    c.bench_function("benchmark_file_load_few_big_lines", |b| b.iter(|| {
+        Rope::from(black_box(&text));
+    }));
 }
 
-#[bench]
-fn benchmark_char_insertion_one_line_edit(b: &mut Bencher) {
+fn benchmark_char_insertion_one_line_edit(c: &mut Criterion) {
     let mut text = Rope::from("b".repeat(100));
     let mut offset = 100;
-    b.iter(|| {
-        text.edit(offset..=offset, "a");
+    c.bench_function("benchmark_char_insertion_one_line_edit", |b| b.iter(|| {
+        text.edit(offset..=offset, black_box("a"));
         offset += 1;
-    });
+    }));
 }
 
-#[bench]
-fn benchmark_paste_into_line(b: &mut Bencher) {
-    let mut text = Rope::from(build_short_lines(50_000));
-    let insertion = "a".repeat(50);
-    let mut offset = 100;
-    b.iter(|| {
-        text.edit(offset..=offset, &insertion);
-        offset += 150;
-    });
-}
-
-#[bench]
-fn benchmark_insert_newline(b: &mut Bencher) {
-    let mut text = Rope::from(build_few_big_lines(1_000_000));
-    let mut offset = 1000;
-    b.iter(|| {
-        text.edit(offset..=offset, "\n");
-        offset += 1001;
-    });
-}
-
-#[bench]
-fn benchmark_overwrite_into_line(b: &mut Bencher) {
-    let mut text = Rope::from(build_short_lines(50_000));
-    let mut offset = 100;
-    let insertion = "a".repeat(50);
-    b.iter(|| {
-        // TODO: if the method runs too quickly, this may generate a fault
-        // since there's an upper limit to how many times this can run.
-        text.edit(offset..=offset + 20, &insertion);
-        offset += 30;
-    });
-}
-
-#[bench]
-fn benchmark_triangle_concat_inplace(b: &mut Bencher) {
-    let mut text = Rope::from("");
-    let insertion = build_triangle(3000);
-    let insertion_len = insertion.len();
-    let mut offset = 0;
-    b.iter(|| {
-        text.edit(offset..=offset, &insertion);
-        offset += insertion_len;
-    });
-}
-
-#[bench]
-fn real_world_editing_scenario(b: &mut Bencher) {
-    b.iter(|| {
-        let mut text = Rope::default();
-        let mut cursor = 0;
-        for i in 1..10_000 {
-            let s = if i % 80 == 0 { "\n" } else { "a" };
-            text.edit(cursor..cursor, s);
-            if i % 123 == 0 {
-                // periodically do some deletes
-                text.edit(cursor - 5..cursor, "");
-            }
-
-            // periodically move cursor:
-            cursor = match i {
-                1000 => 200,
-                2000 => 1800,
-                3000 => 1000,
-                4000 => text.len() - 1,
-                5000 => 404,
-                6000 => 4444,
-                7000 => 6990,
-                8000 => 6990,
-                9000 => 100,
-                n if n % 123 == 0 => cursor - 5, // the delete case
-                _ => cursor + 1,
-            };
-        }
-    })
-}
+fn benchmark_paste_into_line(c: &mut Criterion) {
+    fn main() {
+        eprintln!("Benchmarks removed in xi-editor-ph7; use the upstream xi-editor project if you need perf data.");
+    }
+    c.bench_function("benchmark_paste_into_line", |b| b.iter(|| {

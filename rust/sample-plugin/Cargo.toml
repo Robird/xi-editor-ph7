@@ -6,6 +6,7 @@ authors = ["Colin Rofls <colin@cmyr.net>"]
 repository = "https://github.com/google/xi-editor"
 description = "An example plugin, for testing and illustration"
 edition = '2018'
+rust-version = "1.75"
 
 [dependencies]
 serde = "1.0"

@@ -158,15 +158,8 @@ impl<'a, W: Write + 'static> Drop for PanicGuard<'a, W> {
     }
 }
 
-trait IdleProc: Send {
-    fn call(self: Box<Self>, token: usize);
-}
-
-impl<F: Send + FnOnce(usize)> IdleProc for F {
-    fn call(self: Box<F>, token: usize) {
-        (*self)(token)
-    }
-}
+// IdleProc trait removed: The RPC idle queue uses tokens (usize), not boxed
+// closures, so a dedicated trait was unused and only raised warning noise.
 
 enum ResponseHandler {
     Chan(mpsc::Sender<Result<Value, Error>>),

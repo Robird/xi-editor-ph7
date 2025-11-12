@@ -1,0 +1,3 @@
+{
+  "message": "This fork no longer tracks cargo metadata snapshots in-repo. Run `cargo metadata --format-version 1` from rust/ when live data is required."
+}

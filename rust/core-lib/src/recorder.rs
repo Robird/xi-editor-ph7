@@ -114,7 +114,7 @@ impl Recorder {
         let is_current_recording: bool = self
             .active_recording
             .as_ref()
-            .map_or(false, |current_recording| current_recording == recording_name);
+            .is_some_and(|current_recording| current_recording == recording_name);
 
         if is_current_recording {
             warn!("Cannot play recording while it's currently active!");

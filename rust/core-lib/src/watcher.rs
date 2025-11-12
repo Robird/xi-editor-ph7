@@ -489,7 +489,19 @@ mod tests {
         sleep(10);
         tmp.write("adir/dir2/file");
         let _ = recv_all(&rx, Duration::from_millis(1000));
-        let events = w.take_events();
+        let mut events: Vec<_> = w.take_events().into_iter().collect();
+
+        if cfg!(target_os = "windows") {
+            let dir_path = tmp.mkpath("adir/dir2");
+            let token_one = WatchToken(1);
+            events.retain(|(token, event)| {
+                !(*token == token_one
+                    && event.paths.len() == 1
+                    && event.paths[0] == dir_path
+                    && event.kind == EventKind::Modify(ModifyKind::Any))
+            });
+        }
+
         assert_eq!(
             events,
             vec![

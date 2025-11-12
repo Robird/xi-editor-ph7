@@ -39,7 +39,9 @@ use crate::rope::{Rope, RopeInfo};
 
 /// Represents the current state of a document and all of its history
 #[derive(Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg(feature = "serde")]
+#[allow(clippy::non_local_definitions)]
+#[derive(Serialize, Deserialize)]
 pub struct Engine {
     /// The session ID used to create new `RevId`s for edits made on this device
     #[cfg_attr(feature = "serde", serde(default = "default_session", skip_serializing))]
@@ -76,7 +78,9 @@ pub struct Engine {
 // The advantage of using a session ID over random numbers is that it can be
 // easily delta-compressed later.
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg(feature = "serde")]
+#[allow(clippy::non_local_definitions)]
+#[derive(Serialize, Deserialize)]
 pub struct RevId {
     // 96 bits has a 10^(-12) chance of collision with 400 million sessions and 10^(-6) with 100 billion.
     // `session1==session2==0` is reserved for initialization which is the same on all sessions.
@@ -90,7 +94,9 @@ pub struct RevId {
 }
 
 #[derive(Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg(feature = "serde")]
+#[allow(clippy::non_local_definitions)]
+#[derive(Serialize, Deserialize)]
 struct Revision {
     /// This uniquely represents the identity of this revision and it stays
     /// the same even if it is rebased or merged between devices.
@@ -129,7 +135,9 @@ struct FullPriority {
 use self::Contents::*;
 
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg(feature = "serde")]
+#[allow(clippy::non_local_definitions)]
+#[derive(Serialize, Deserialize)]
 enum Contents {
     Edit {
         /// Used to order concurrent inserts, for example auto-indentation
@@ -240,13 +248,13 @@ impl Engine {
     // TODO: does Cow really help much here? It certainly won't after making Subsets a rope.
     /// Find what the `deletes_from_union` field in Engine would have been at the time
     /// of a certain `rev_index`. In other words, the deletes from the union string at that time.
-    fn deletes_from_union_for_index(&self, rev_index: usize) -> Cow<Subset> {
+    fn deletes_from_union_for_index(&self, rev_index: usize) -> Cow<'_, Subset> {
         self.deletes_from_union_before_index(rev_index + 1, true)
     }
 
     /// Garbage collection means undo can sometimes need to replay the very first
     /// revision, and so needs a way to get the deletion set before then.
-    fn deletes_from_union_before_index(&self, rev_index: usize, invert_undos: bool) -> Cow<Subset> {
+    fn deletes_from_union_before_index(&self, rev_index: usize, invert_undos: bool) -> Cow<'_, Subset> {
         let mut deletes_from_union = Cow::Borrowed(&self.deletes_from_union);
         let mut undone_groups = Cow::Borrowed(&self.undone_groups);
 
@@ -286,7 +294,7 @@ impl Engine {
     }
 
     /// Get the Subset to delete from the current union string in order to obtain a revision's content
-    fn deletes_from_cur_union_for_index(&self, rev_index: usize) -> Cow<Subset> {
+    fn deletes_from_cur_union_for_index(&self, rev_index: usize) -> Cow<'_, Subset> {
         let mut deletes_from_union = self.deletes_from_union_for_index(rev_index);
         for rev in &self.revs[rev_index + 1..] {
             if let Edit { ref inserts, .. } = rev.edit {

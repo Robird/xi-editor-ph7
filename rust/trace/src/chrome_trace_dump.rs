@@ -19,8 +19,9 @@
     clippy::ptr_arg
 )]
 
-#[cfg(all(test, feature = "benchmarks"))]
-extern crate test;
+// We do not use the nightly test harness in this crate.  Criterion benches
+// live in `benches/` and exercise the public API.  The `test` crate and
+// #[bench] attributes are not used to stay compatible with stable toolchains.
 
 use std::io::{Error as IOError, ErrorKind as IOErrorKind, Read, Write};
 
@@ -57,6 +58,7 @@ impl Error {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
 enum ChromeTraceArrayEntries {
@@ -110,8 +112,8 @@ mod tests {
     use super::*;
     #[cfg(feature = "json_payload")]
     use crate::TracePayloadT;
-    #[cfg(feature = "benchmarks")]
-    use test::Bencher;
+    // Criterion benches replace the old `test::Bencher` usage; continue to
+    // use tests for validation here.
 
     #[cfg(not(feature = "json_payload"))]
     fn to_payload(value: &'static str) -> &'static str {
@@ -187,36 +189,7 @@ mod tests {
         assert_eq!(deserialized_samples, samples);
     }
 
-    #[cfg(all(feature = "chrome_trace_event", feature = "benchmarks"))]
-    #[bench]
-    fn bench_chrome_trace_serialization_one_element(b: &mut Bencher) {
-        use super::*;
-
-        let mut serialized = Vec::<u8>::new();
-        let samples = vec![super::Sample::new_instant("trace1", &["benchmark", "test"], None)];
-        b.iter(|| {
-            serialized.clear();
-            serialize(&samples, &mut serialized).unwrap();
-        });
-    }
-
-    #[cfg(all(feature = "chrome_trace_event", feature = "benchmarks"))]
-    #[bench]
-    fn bench_chrome_trace_serialization_multiple_elements(b: &mut Bencher) {
-        use super::super::*;
-        use super::*;
-
-        let mut serialized = Vec::<u8>::new();
-        let samples = vec![
-            Sample::new_instant("trace1", &["benchmark", "test"], None),
-            Sample::new_instant("trace2", &["benchmark"], None),
-            Sample::new_duration("trace3", &["benchmark"], Some(to_payload("some payload")), 0, 0),
-            Sample::new_instant("trace4", &["benchmark"], None),
-        ];
-
-        b.iter(|| {
-            serialized.clear();
-            serialize(&samples, &mut serialized).unwrap();
-        });
-    }
+    // The `#[bench]` bench cases were removed in favor of Criterion benches in
+    // `benches/`.  Keeping them as tests would require the nightly-only
+    // `test` crate, which we avoid for stable compatibility.
 }

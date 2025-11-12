@@ -73,7 +73,7 @@ impl<N: NodeInfo> Delta<N> {
             i = end;
             el = iter.next();
         }
-        if let Some(&DeltaElement::Insert(ref n)) = el {
+        if let Some(DeltaElement::Insert(n)) = el {
             el = iter.next();
             if el.is_none() {
                 if i == self.base_len {
@@ -331,12 +331,12 @@ impl<N: NodeInfo> Delta<N> {
     }
 
     /// Iterates over all the inserts of the delta.
-    pub fn iter_inserts(&self) -> InsertsIter<N> {
+    pub fn iter_inserts(&self) -> InsertsIter<'_, N> {
         InsertsIter { pos: 0, last_end: 0, els_iter: self.els.iter() }
     }
 
     /// Iterates over all the deletions of the delta.
-    pub fn iter_deletions(&self) -> DeletionsIter<N> {
+    pub fn iter_deletions(&self) -> DeletionsIter<'_, N> {
         DeletionsIter { pos: 0, last_end: 0, base_len: self.base_len, els_iter: self.els.iter() }
     }
 }
@@ -498,10 +498,9 @@ impl<N: NodeInfo> Deref for InsertDelta<N> {
     }
 }
 
+// TODO: this doesn't need the new strings, so it should either be based on a new structure
 /// A mapping from coordinates in the source sequence to coordinates in the sequence after
 /// the delta is applied.
-
-// TODO: this doesn't need the new strings, so it should either be based on a new structure
 // like Delta but missing the strings, or perhaps the two subsets it's synthesized from.
 pub struct Transformer<'a, N: NodeInfo + 'a> {
     delta: &'a Delta<N>,
@@ -513,10 +512,9 @@ impl<'a, N: NodeInfo + 'a> Transformer<'a, N> {
         Transformer { delta }
     }
 
+    // TODO: implement a cursor so we're not scanning from the beginning every time.
     /// Transform a single coordinate. The `after` parameter indicates whether it
     /// it should land before or after an inserted region.
-
-    // TODO: implement a cursor so we're not scanning from the beginning every time.
     pub fn transform(&mut self, ix: usize, after: bool) -> usize {
         if ix == 0 && !after {
             return 0;
