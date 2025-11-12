@@ -19,9 +19,16 @@ dirs = "2.0"
 
 [dependencies.xi-core-lib]
 path = "core-lib"
+default-features = false
 
 [dependencies.xi-rpc]
 path = "rpc"
+default-features = false
+
+[features]
+default = ["trace", "watch"]
+trace = ["xi-core-lib/trace", "xi-rpc/trace"]
+watch = ["xi-core-lib/notify"]
 
 [workspace]
 members = [
