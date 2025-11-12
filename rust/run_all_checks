@@ -48,5 +48,6 @@ fi
 
 printf 'Tests passed!\n'
 printf 'Benchmarks are disabled in xi-editor-ph7; skipping cargo bench.\n'
+printf 'Workspace limited to core crates (xi-core, xi-core-lib, xi-plugin-lib, xi-rope, xi-rpc, xi-trace, xi-unicode).\n'
 
 printf 'All checks passed.\n'
