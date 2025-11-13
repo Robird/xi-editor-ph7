@@ -140,11 +140,11 @@ impl NodeInfo for RopeInfo {
 }
 
 impl DefaultMetricProvider for RopeInfo {
-    fn convert_from_default<M: Metric<Self>>(node: &Node<Self>, offset: usize) -> usize {
+    fn convert_from_default<M: Metric<Self, Self::L>>(node: &Node<Self>, offset: usize) -> usize {
         node.convert_metrics::<BaseMetric, M>(offset)
     }
 
-    fn convert_to_default<M: Metric<Self>>(node: &Node<Self>, offset: usize) -> usize {
+    fn convert_to_default<M: Metric<Self, Self::L>>(node: &Node<Self>, offset: usize) -> usize {
         node.convert_metrics::<M, BaseMetric>(offset)
     }
 }
@@ -167,7 +167,7 @@ impl DefaultMetricProvider for RopeInfo {
 #[derive(Clone, Copy)]
 pub struct BaseMetric(());
 
-impl Metric<RopeInfo> for BaseMetric {
+impl Metric<RopeInfo, String> for BaseMetric {
     fn measure(_: &RopeInfo, len: usize) -> usize {
         len
     }
@@ -235,7 +235,7 @@ pub struct LinesMetric(usize); // number of lines
 /// Measured unit is newline amount.
 /// Base unit is utf8 code unit.
 /// Boundary is trailing and determined by a newline char.
-impl Metric<RopeInfo> for LinesMetric {
+impl Metric<RopeInfo, String> for LinesMetric {
     fn measure(info: &RopeInfo, _: usize) -> usize {
         info.lines
     }
@@ -282,7 +282,7 @@ impl Metric<RopeInfo> for LinesMetric {
 #[allow(dead_code)]
 pub struct Utf16CodeUnitsMetric(usize);
 
-impl Metric<RopeInfo> for Utf16CodeUnitsMetric {
+impl Metric<RopeInfo, String> for Utf16CodeUnitsMetric {
     fn measure(info: &RopeInfo, _: usize) -> usize {
         info.utf16_size
     }

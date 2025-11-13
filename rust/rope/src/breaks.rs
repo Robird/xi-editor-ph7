@@ -92,11 +92,11 @@ impl NodeInfo for BreaksInfo {
 }
 
 impl DefaultMetricProvider for BreaksInfo {
-    fn convert_from_default<M: Metric<Self>>(node: &Node<Self>, offset: usize) -> usize {
+    fn convert_from_default<M: Metric<Self, Self::L>>(node: &Node<Self>, offset: usize) -> usize {
         node.convert_metrics::<BreaksBaseMetric, M>(offset)
     }
 
-    fn convert_to_default<M: Metric<Self>>(node: &Node<Self>, offset: usize) -> usize {
+    fn convert_to_default<M: Metric<Self, Self::L>>(node: &Node<Self>, offset: usize) -> usize {
         node.convert_metrics::<M, BreaksBaseMetric>(offset)
     }
 }
@@ -112,7 +112,7 @@ impl BreaksLeaf {
 #[derive(Copy, Clone)]
 pub struct BreaksMetric(());
 
-impl Metric<BreaksInfo> for BreaksMetric {
+impl Metric<BreaksInfo, BreaksLeaf> for BreaksMetric {
     fn measure(info: &BreaksInfo, _: usize) -> usize {
         info.0
     }
@@ -172,7 +172,7 @@ impl Metric<BreaksInfo> for BreaksMetric {
 #[derive(Copy, Clone)]
 pub struct BreaksBaseMetric(());
 
-impl Metric<BreaksInfo> for BreaksBaseMetric {
+impl Metric<BreaksInfo, BreaksLeaf> for BreaksBaseMetric {
     fn measure(_: &BreaksInfo, len: usize) -> usize {
         len
     }

@@ -65,8 +65,8 @@ pub trait NodeInfo: Clone {
 /// Implementors supply the logic used by [`Node::count`] and
 /// [`Node::count_base_units`] to translate offsets between metrics.
 pub trait DefaultMetricProvider: NodeInfo {
-    fn convert_from_default<M: Metric<Self>>(node: &Node<Self>, offset: usize) -> usize;
-    fn convert_to_default<M: Metric<Self>>(node: &Node<Self>, offset: usize) -> usize;
+    fn convert_from_default<M: Metric<Self, Self::L>>(node: &Node<Self>, offset: usize) -> usize;
+    fn convert_to_default<M: Metric<Self, Self::L>>(node: &Node<Self>, offset: usize) -> usize;
 }
 
 /// A trait for the leaves of trees of type [Node](struct.Node.html).
@@ -145,10 +145,9 @@ enum NodeVal<N: NodeInfo> {
 ///
 /// For the conceptual background see the
 /// [blog post, Rope science, part 2: metrics](https://github.com/google/xi-editor/blob/master/docs/docs/rope_science_02.md).
-pub trait Metric<N: NodeInfo> {
+pub trait Metric<N: NodeInfo, L: Leaf> {
     /// Return the size of the
-    /// [NodeInfo::L](trait.NodeInfo.html#associatedtype.L), as measured by this
-    /// metric.
+    /// leaf as measured by this metric.
     ///
     /// The usize argument is the total size/length of the node, in base units.
     ///
@@ -165,28 +164,28 @@ pub trait Metric<N: NodeInfo> {
     /// # Invariants:
     ///
     /// - `from_base_units(to_base_units(x)) == x` is True for valid `x`
-    fn to_base_units(l: &N::L, in_measured_units: usize) -> usize;
+    fn to_base_units(l: &L, in_measured_units: usize) -> usize;
 
     /// Returns the smallest offset in measured units corresponding to an offset in base units.
     ///
     /// # Invariants:
     ///
     /// - `from_base_units(to_base_units(x)) == x` is True for valid `x`
-    fn from_base_units(l: &N::L, in_base_units: usize) -> usize;
+    fn from_base_units(l: &L, in_base_units: usize) -> usize;
 
     /// Return whether the offset in base units is a boundary of this metric.
     /// If a boundary is at end of a leaf then this method must return true.
     /// However, a boundary at the beginning of a leaf is optional
     /// (the previous leaf will be queried).
-    fn is_boundary(l: &N::L, offset: usize) -> bool;
+    fn is_boundary(l: &L, offset: usize) -> bool;
 
     /// Returns the index of the boundary directly preceding offset,
     /// or None if no such boundary exists. Input and result are in base units.
-    fn prev(l: &N::L, offset: usize) -> Option<usize>;
+    fn prev(l: &L, offset: usize) -> Option<usize>;
 
     /// Returns the index of the first boundary for which index > offset,
     /// or None if no such boundary exists. Input and result are in base units.
-    fn next(l: &N::L, offset: usize) -> Option<usize>;
+    fn next(l: &L, offset: usize) -> Option<usize>;
 
     /// Returns true if the measured units in this metric can span multiple
     /// leaves.  As an example, in a metric that measures lines in a rope, a
@@ -373,7 +372,7 @@ impl<N: NodeInfo> Node<N> {
         }
     }
 
-    pub fn measure<M: Metric<N>>(&self) -> usize {
+    pub fn measure<M: Metric<N, N::L>>(&self) -> usize {
         M::measure(&self.0.info, self.0.len)
     }
 
@@ -399,7 +398,10 @@ impl<N: NodeInfo> Node<N> {
     }
 
     // doesn't deal with endpoint, handle that specially if you need it
-    pub fn convert_metrics<M1: Metric<N>, M2: Metric<N>>(&self, mut m1: usize) -> usize {
+    pub fn convert_metrics<M1: Metric<N, N::L>, M2: Metric<N, N::L>>(
+        &self,
+        mut m1: usize,
+    ) -> usize {
         if m1 == 0 {
             return 0;
         }
@@ -441,7 +443,7 @@ impl<N: DefaultMetricProvider> Node<N> {
     /// let num_lines = my_rope.count::<LinesMetric>(my_rope.len());
     /// assert_eq!(2, num_lines);
     /// ```
-    pub fn count<M: Metric<N>>(&self, offset: usize) -> usize {
+    pub fn count<M: Metric<N, N::L>>(&self, offset: usize) -> usize {
         N::convert_from_default::<M>(self, offset)
     }
 
@@ -458,7 +460,7 @@ impl<N: DefaultMetricProvider> Node<N> {
     /// let byte_offset = my_rope.count_base_units::<LinesMetric>(1);
     /// assert_eq!(12, byte_offset);
     /// ```
-    pub fn count_base_units<M: Metric<N>>(&self, offset: usize) -> usize {
+    pub fn count_base_units<M: Metric<N, N::L>>(&self, offset: usize) -> usize {
         N::convert_to_default::<M>(self, offset)
     }
 }
@@ -717,7 +719,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
     ///
     /// Note: the beginning and end of the tree may or may not be boundaries, depending on the
     /// metric. If the metric is not `can_fragment`, then they always are.
-    pub fn is_boundary<M: Metric<N>>(&mut self) -> bool {
+    pub fn is_boundary<M: Metric<N, N::L>>(&mut self) -> bool {
         if self.leaf.is_none() {
             // not at a valid position
             return false;
@@ -742,7 +744,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
     /// When there is no previous boundary, returns `None` and the cursor becomes invalid.
     ///
     /// Return value: the position of the boundary, if it exists.
-    pub fn prev<M: Metric<N>>(&mut self) -> Option<usize> {
+    pub fn prev<M: Metric<N, N::L>>(&mut self) -> Option<usize> {
         if self.position == 0 || self.leaf.is_none() {
             self.leaf = None;
             return None;
@@ -779,7 +781,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
     /// When there is no next boundary, returns `None` and the cursor becomes invalid.
     ///
     /// Return value: the position of the boundary, if it exists.
-    pub fn next<M: Metric<N>>(&mut self) -> Option<usize> {
+    pub fn next<M: Metric<N, N::L>>(&mut self) -> Option<usize> {
         if self.position >= self.root.len() || self.leaf.is_none() {
             self.leaf = None;
             return None;
@@ -811,7 +813,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
     /// else behaves like [`next`](#method.next).
     ///
     /// [`Metric`]: struct.Metric.html
-    pub fn at_or_next<M: Metric<N>>(&mut self) -> Option<usize> {
+    pub fn at_or_next<M: Metric<N, N::L>>(&mut self) -> Option<usize> {
         if self.is_boundary::<M>() {
             Some(self.pos())
         } else {
@@ -823,7 +825,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
     /// else behaves like [`prev`](#method.prev).
     ///
     /// [`Metric`]: struct.Metric.html
-    pub fn at_or_prev<M: Metric<N>>(&mut self) -> Option<usize> {
+    pub fn at_or_prev<M: Metric<N, N::L>>(&mut self) -> Option<usize> {
         if self.is_boundary::<M>() {
             Some(self.pos())
         } else {
@@ -845,7 +847,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
     ///
     /// ```
     /// [`Metric`]: struct.Metric.html
-    pub fn iter<'c, M: Metric<N>>(&'c mut self) -> CursorIter<'c, 'a, N, M> {
+    pub fn iter<'c, M: Metric<N, N::L>>(&'c mut self) -> CursorIter<'c, 'a, N, M> {
         CursorIter { cursor: self, _metric: PhantomData }
     }
 
@@ -854,7 +856,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
     /// If the last boundary is at the end of the leaf, it is only counted if
     /// it is less than `orig_pos`.
     #[inline]
-    fn last_inside_leaf<M: Metric<N>>(&mut self, orig_pos: usize) -> Option<usize> {
+    fn last_inside_leaf<M: Metric<N, N::L>>(&mut self, orig_pos: usize) -> Option<usize> {
         let l = self.leaf.expect("inconsistent, shouldn't get here");
         let len = l.len();
         if self.offset_of_leaf + len < orig_pos && M::is_boundary(l, len) {
@@ -868,7 +870,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
 
     /// Tries to find the next boundary in the leaf the cursor is currently in.
     #[inline]
-    fn next_inside_leaf<M: Metric<N>>(&mut self) -> Option<usize> {
+    fn next_inside_leaf<M: Metric<N, N::L>>(&mut self) -> Option<usize> {
         let l = self.leaf.expect("inconsistent, shouldn't get here");
         let offset_in_leaf = self.position - self.offset_of_leaf;
         let offset_in_leaf = M::next(l, offset_in_leaf)?;
@@ -984,7 +986,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
     /// Returns the measure at the beginning of the leaf containing `pos`.
     ///
     /// This method is O(log n) no matter the current cursor state.
-    fn measure_leaf<M: Metric<N>>(&self, mut pos: usize) -> usize {
+    fn measure_leaf<M: Metric<N, N::L>>(&self, mut pos: usize) -> usize {
         let mut node = self.root;
         let mut metric = 0;
         while node.height() > 0 {
@@ -1009,7 +1011,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
     ///
     /// If `measure` is greater than the measure of the whole tree, then moves
     /// to the last node.
-    fn descend_metric<M: Metric<N>>(&mut self, mut measure: usize) {
+    fn descend_metric<M: Metric<N, N::L>>(&mut self, mut measure: usize) {
         let mut node = self.root;
         let mut offset = 0;
         while node.height() > 0 {
@@ -1044,12 +1046,12 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
 ///
 /// [`Cursor`]: struct.Cursor.html
 /// [`Metric`]: struct.Metric.html
-pub struct CursorIter<'c, 'a: 'c, N: 'a + NodeInfo, M: 'a + Metric<N>> {
+pub struct CursorIter<'c, 'a: 'c, N: 'a + NodeInfo, M: 'a + Metric<N, N::L>> {
     cursor: &'c mut Cursor<'a, N>,
     _metric: PhantomData<&'a M>,
 }
 
-impl<'c, 'a, N: NodeInfo, M: Metric<N>> Iterator for CursorIter<'c, 'a, N, M> {
+impl<'c, 'a, N: NodeInfo, M: Metric<N, N::L>> Iterator for CursorIter<'c, 'a, N, M> {
     type Item = usize;
 
     fn next(&mut self) -> Option<usize> {
@@ -1057,7 +1059,7 @@ impl<'c, 'a, N: NodeInfo, M: Metric<N>> Iterator for CursorIter<'c, 'a, N, M> {
     }
 }
 
-impl<'c, 'a, N: NodeInfo, M: Metric<N>> CursorIter<'c, 'a, N, M> {
+impl<'c, 'a, N: NodeInfo, M: Metric<N, N::L>> CursorIter<'c, 'a, N, M> {
     /// Returns the current position of the underlying [`Cursor`].
     ///
     /// [`Cursor`]: struct.Cursor.html
