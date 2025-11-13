@@ -53,7 +53,10 @@ impl From<RopeDeltaElement_> for DeltaElement<RopeInfo, String> {
 
 impl From<RopeDelta_> for Delta<RopeInfo, String> {
     fn from(mut delta: RopeDelta_) -> Delta<RopeInfo, String> {
-        Delta { els: delta.els.drain(..).map(DeltaElement::from).collect(), base_len: delta.base_len }
+        Delta {
+            els: delta.els.drain(..).map(DeltaElement::from).collect(),
+            base_len: delta.base_len,
+        }
     }
 }
 
@@ -131,7 +134,6 @@ impl<'de> Deserialize<'de> for Delta<RopeInfo, String> {
         // NOTE: we use interim representation types (defined at module-level)
         // for (de)serialization and then convert it into our actual target.
 
-        
         let d = RopeDelta_::deserialize(deserializer)?;
         Ok(Delta::from(d))
     }

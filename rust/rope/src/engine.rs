@@ -254,7 +254,11 @@ impl Engine {
 
     /// Garbage collection means undo can sometimes need to replay the very first
     /// revision, and so needs a way to get the deletion set before then.
-    fn deletes_from_union_before_index(&self, rev_index: usize, invert_undos: bool) -> Cow<'_, Subset> {
+    fn deletes_from_union_before_index(
+        &self,
+        rev_index: usize,
+        invert_undos: bool,
+    ) -> Cow<'_, Subset> {
         let mut deletes_from_union = Cow::Borrowed(&self.deletes_from_union);
         let mut undone_groups = Cow::Borrowed(&self.undone_groups);
 

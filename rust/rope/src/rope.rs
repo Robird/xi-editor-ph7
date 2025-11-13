@@ -138,11 +138,17 @@ impl NodeInfo<String> for RopeInfo {
 }
 
 impl DefaultMetricProvider<String> for RopeInfo {
-    fn convert_from_default<M: Metric<Self, String>>(node: &Node<Self, String>, offset: usize) -> usize {
+    fn convert_from_default<M: Metric<Self, String>>(
+        node: &Node<Self, String>,
+        offset: usize,
+    ) -> usize {
         node.convert_metrics::<BaseMetric, M>(offset)
     }
 
-    fn convert_to_default<M: Metric<Self, String>>(node: &Node<Self, String>, offset: usize) -> usize {
+    fn convert_to_default<M: Metric<Self, String>>(
+        node: &Node<Self, String>,
+        offset: usize,
+    ) -> usize {
         node.convert_metrics::<M, BaseMetric>(offset)
     }
 }

@@ -227,7 +227,7 @@ impl<'a> RopeScanner<'a> {
     where
         T: Into<Option<usize>>,
     {
-    let stop = stop.into().unwrap_or(usize::MAX);
+        let stop = stop.into().unwrap_or(usize::MAX);
         self.base.set(base_off);
         self.target.set(targ_off);
         self.scanned = 0;
@@ -294,7 +294,7 @@ impl<'a> RopeScanner<'a> {
     where
         T: Into<Option<usize>>,
     {
-    let stop = stop.into().unwrap_or(usize::MAX);
+        let stop = stop.into().unwrap_or(usize::MAX);
         self.base.set(base_off);
         self.target.set(targ_off);
         self.scanned = 0;

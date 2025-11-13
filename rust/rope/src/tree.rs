@@ -16,6 +16,7 @@
 
 use std::cmp::{min, Ordering};
 use std::marker::PhantomData;
+use std::ops::Range;
 use std::sync::Arc;
 
 use crate::interval::{Interval, IntervalBounds};
@@ -114,11 +115,19 @@ pub trait Leaf: Sized + Clone + Default {
 /// rope in functional programming jargon). However, it is not restricted
 /// to strings, and it is expected to be the basis for a number of data
 /// structures useful for text processing.
+/// Internal helper that wraps `Arc<NodeBody>` and centralizes copy-on-write logic.
 #[derive(Clone)]
-pub struct Node<N: NodeInfo<L>, L: Leaf>(Arc<NodeBody<N, L>>);
+pub(crate) struct SharedNode<N: NodeInfo<L>, L: Leaf> {
+    arc: Arc<NodeBody<N, L>>,
+}
 
 #[derive(Clone)]
-struct NodeBody<N: NodeInfo<L>, L: Leaf> {
+pub struct Node<N: NodeInfo<L>, L: Leaf> {
+    shared: SharedNode<N, L>,
+}
+
+#[derive(Clone)]
+pub(crate) struct NodeBody<N: NodeInfo<L>, L: Leaf> {
     height: usize,
     len: usize,
     info: N,
@@ -129,6 +138,138 @@ struct NodeBody<N: NodeInfo<L>, L: Leaf> {
 enum NodeVal<N: NodeInfo<L>, L: Leaf> {
     Leaf(L),
     Internal(Vec<Node<N, L>>),
+}
+
+impl<N: NodeInfo<L>, L: Leaf> SharedNode<N, L> {
+    #[inline]
+    pub(crate) fn new(body: NodeBody<N, L>) -> Self {
+        SharedNode { arc: Arc::new(body) }
+    }
+
+    #[inline]
+    #[allow(dead_code)]
+    pub(crate) fn from_arc(arc: Arc<NodeBody<N, L>>) -> Self {
+        SharedNode { arc }
+    }
+
+    #[inline]
+    #[allow(dead_code)]
+    pub(crate) fn into_arc(self) -> Arc<NodeBody<N, L>> {
+        self.arc
+    }
+
+    #[inline]
+    #[allow(dead_code)]
+    pub(crate) fn arc(&self) -> &Arc<NodeBody<N, L>> {
+        &self.arc
+    }
+
+    #[inline]
+    pub(crate) fn body(&self) -> &NodeBody<N, L> {
+        &self.arc
+    }
+
+    #[inline]
+    pub(crate) fn ensure_unique(&mut self) -> &mut NodeBody<N, L> {
+        Arc::make_mut(&mut self.arc)
+    }
+
+    #[inline]
+    pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.arc, &other.arc)
+    }
+
+    pub(crate) fn from_children(children: Vec<Node<N, L>>) -> Self {
+        debug_assert!(children.len() > 1);
+        debug_assert!(children.len() <= MAX_CHILDREN);
+        let height = children[0].height() + 1;
+        let expected_child_height = height - 1;
+        let mut iter = children.iter();
+        let first = iter.next().unwrap();
+        debug_assert_eq!(first.height(), expected_child_height);
+        debug_assert!(first.is_ok_child());
+
+        let mut len = first.len();
+        let mut info = first.body().info.clone();
+        for child in iter {
+            debug_assert_eq!(child.height(), expected_child_height);
+            debug_assert!(child.is_ok_child());
+            len += child.len();
+            info.accumulate(&child.body().info);
+        }
+
+        SharedNode::new(NodeBody { height, len, info, val: NodeVal::Internal(children) })
+    }
+
+    pub(crate) fn clone_with_children(&self, children: &[Node<N, L>]) -> SharedNode<N, L> {
+        debug_assert!(self.body().height > 0, "cannot clone leaf with children");
+        debug_assert!(!children.is_empty());
+        debug_assert!(children.len() <= MAX_CHILDREN);
+        let expected_child_height = self.body().height - 1;
+
+        let mut iter = children.iter();
+        let first = iter.next().unwrap();
+        debug_assert_eq!(first.height(), expected_child_height);
+
+        let mut len = first.len();
+        let mut info = first.body().info.clone();
+        for child in iter {
+            debug_assert_eq!(child.height(), expected_child_height);
+            len += child.len();
+            info.accumulate(&child.body().info);
+        }
+
+        SharedNode::new(NodeBody {
+            height: self.body().height,
+            len,
+            info,
+            val: NodeVal::Internal(children.to_vec()),
+        })
+    }
+
+    pub(crate) fn replace_child_range(&mut self, range: Range<usize>, replacements: &[Node<N, L>]) {
+        let body_height = self.body().height;
+        debug_assert!(body_height > 0, "cannot replace children on a leaf node");
+        let expected_child_height = body_height - 1;
+        let range_start = range.start;
+        let range_end = range.end;
+        let body = self.ensure_unique();
+        {
+            let NodeVal::Internal(ref mut children) = body.val else {
+                panic!("replace_child_range called on leaf node");
+            };
+            debug_assert!(range_start <= range_end && range_end <= children.len());
+            for child in replacements {
+                debug_assert_eq!(child.height(), expected_child_height);
+            }
+            children.splice(range_start..range_end, replacements.iter().cloned());
+        }
+        SharedNode::refresh_len_info(body);
+    }
+
+    fn refresh_len_info(body: &mut NodeBody<N, L>) {
+        match &body.val {
+            NodeVal::Leaf(l) => {
+                body.len = l.len();
+                body.info = N::compute_info(l);
+            }
+            NodeVal::Internal(children) => {
+                if let Some(first) = children.first() {
+                    let mut len = first.len();
+                    let mut info = first.body().info.clone();
+                    for child in &children[1..] {
+                        len += child.len();
+                        info.accumulate(&child.body().info);
+                    }
+                    body.len = len;
+                    body.info = info;
+                } else {
+                    body.len = 0;
+                    body.info = N::identity();
+                }
+            }
+        }
+    }
 }
 
 // also consider making Metric a newtype for usize, so type system can
@@ -189,10 +330,30 @@ pub trait Metric<N: NodeInfo<L>, L: Leaf> {
 }
 
 impl<N: NodeInfo<L>, L: Leaf> Node<N, L> {
+    #[inline]
+    fn from_shared(shared: SharedNode<N, L>) -> Self {
+        Node { shared }
+    }
+
+    #[inline]
+    pub(crate) fn shared(&self) -> &SharedNode<N, L> {
+        &self.shared
+    }
+
+    #[inline]
+    pub(crate) fn shared_mut(&mut self) -> &mut SharedNode<N, L> {
+        &mut self.shared
+    }
+
+    #[inline]
+    pub(crate) fn body(&self) -> &NodeBody<N, L> {
+        self.shared.body()
+    }
+
     pub fn from_leaf(l: L) -> Node<N, L> {
         let len = l.len();
         let info = N::compute_info(&l);
-        Node(Arc::new(NodeBody { height: 0, len, info, val: NodeVal::Leaf(l) }))
+        Node::from_shared(SharedNode::new(NodeBody { height: 0, len, info, val: NodeVal::Leaf(l) }))
     }
 
     /// Create a node from a vec of nodes.
@@ -202,23 +363,11 @@ impl<N: NodeInfo<L>, L: Leaf> Node<N, L> {
     /// * All the nodes are the same height.
     /// * All the nodes must satisfy is_ok_child.
     fn from_nodes(nodes: Vec<Node<N, L>>) -> Node<N, L> {
-        debug_assert!(nodes.len() > 1);
-        debug_assert!(nodes.len() <= MAX_CHILDREN);
-        let height = nodes[0].0.height + 1;
-        let mut len = nodes[0].0.len;
-        let mut info = nodes[0].0.info.clone();
-        debug_assert!(nodes[0].is_ok_child());
-        for child in &nodes[1..] {
-            debug_assert_eq!(child.height() + 1, height);
-            debug_assert!(child.is_ok_child());
-            len += child.0.len;
-            info.accumulate(&child.0.info);
-        }
-        Node(Arc::new(NodeBody { height, len, info, val: NodeVal::Internal(nodes) }))
+        Node::from_shared(SharedNode::from_children(nodes))
     }
 
     pub fn len(&self) -> usize {
-        self.0.len
+        self.body().len
     }
 
     pub fn is_empty(&self) -> bool {
@@ -230,23 +379,23 @@ impl<N: NodeInfo<L>, L: Leaf> Node<N, L> {
     /// This is principally intended to be used by the druid crate, without needing
     /// to actually add a feature and implement druid's `Data` trait.
     pub fn ptr_eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
+        self.shared.ptr_eq(other.shared())
     }
 
     fn height(&self) -> usize {
-        self.0.height
+        self.body().height
     }
 
     fn is_leaf(&self) -> bool {
-        self.0.height == 0
+        self.height() == 0
     }
 
     fn interval(&self) -> Interval {
-        self.0.info.interval(self.0.len)
+        self.body().info.interval(self.body().len)
     }
 
     fn get_children(&self) -> &[Node<N, L>] {
-        if let NodeVal::Internal(ref v) = self.0.val {
+        if let NodeVal::Internal(ref v) = self.body().val {
             v
         } else {
             panic!("get_children called on leaf node");
@@ -254,7 +403,7 @@ impl<N: NodeInfo<L>, L: Leaf> Node<N, L> {
     }
 
     fn get_leaf(&self) -> &L {
-        if let NodeVal::Leaf(ref l) = self.0.val {
+        if let NodeVal::Leaf(ref l) = self.body().val {
             l
         } else {
             panic!("get_leaf called on internal node");
@@ -266,11 +415,11 @@ impl<N: NodeInfo<L>, L: Leaf> Node<N, L> {
     /// This clones the leaf if the reference is shared. It also recomputes
     /// length and info after the leaf is mutated.
     fn with_leaf_mut<T>(&mut self, f: impl FnOnce(&mut L) -> T) -> T {
-        let inner = Arc::make_mut(&mut self.0);
-        if let NodeVal::Leaf(ref mut l) = inner.val {
+        let body = self.shared.ensure_unique();
+        if let NodeVal::Leaf(ref mut l) = body.val {
             let result = f(l);
-            inner.len = l.len();
-            inner.info = N::compute_info(l);
+            body.len = l.len();
+            body.info = N::compute_info(l);
             result
         } else {
             panic!("with_leaf_mut called on internal node");
@@ -278,7 +427,7 @@ impl<N: NodeInfo<L>, L: Leaf> Node<N, L> {
     }
 
     fn is_ok_child(&self) -> bool {
-        match self.0.val {
+        match self.body().val {
             NodeVal::Leaf(ref l) => l.is_ok_child(),
             NodeVal::Internal(ref nodes) => nodes.len() >= MIN_CHILDREN,
         }
@@ -307,18 +456,19 @@ impl<N: NodeInfo<L>, L: Leaf> Node<N, L> {
             return Node::from_nodes(vec![rope1, rope2]);
         }
         let res = {
-            let node1 = Arc::make_mut(&mut rope1.0);
+            let body = rope1.shared.ensure_unique();
             let leaf2 = rope2.get_leaf();
-            if let NodeVal::Leaf(ref mut leaf1) = node1.val {
+            if let NodeVal::Leaf(ref mut leaf1) = body.val {
                 let leaf2_iv = Interval::new(0, leaf2.len());
                 let new = leaf1.push_maybe_split(leaf2, leaf2_iv);
-                node1.len = leaf1.len();
-                node1.info = N::compute_info(leaf1);
+                body.len = leaf1.len();
+                body.info = N::compute_info(leaf1);
                 new
             } else {
                 panic!("merge_leaves called on non-leaf");
             }
-        }; match res {
+        };
+        match res {
             Some(new) => Node::from_nodes(vec![rope1, Node::from_leaf(new)]),
             None => rope1,
         }
@@ -367,7 +517,7 @@ impl<N: NodeInfo<L>, L: Leaf> Node<N, L> {
     }
 
     pub fn measure<M: Metric<N, L>>(&self) -> usize {
-        M::measure(&self.0.info, self.0.len)
+        M::measure(&self.body().info, self.body().len)
     }
 
     pub fn subseq<T: IntervalBounds>(&self, iv: T) -> Node<N, L> {
@@ -392,10 +542,7 @@ impl<N: NodeInfo<L>, L: Leaf> Node<N, L> {
     }
 
     // doesn't deal with endpoint, handle that specially if you need it
-    pub fn convert_metrics<M1: Metric<N, L>, M2: Metric<N, L>>(
-        &self,
-        mut m1: usize,
-    ) -> usize {
+    pub fn convert_metrics<M1: Metric<N, L>, M2: Metric<N, L>>(&self, mut m1: usize) -> usize {
         if m1 == 0 {
             return 0;
         }
@@ -508,20 +655,29 @@ impl<N: NodeInfo<L>, L: Leaf> TreeBuilder<N, L> {
                             tos.push(Node::from_leaf(new_leaf));
                         }
                     } else {
-                        let last = tos.pop().unwrap();
-                        let children1 = last.get_children();
-                        let children2 = n.get_children();
-                        let n_children = children1.len() + children2.len();
-                        if n_children <= MAX_CHILDREN {
-                            tos.push(Node::from_nodes([children1, children2].concat()));
+                        let mut last = tos.pop().unwrap();
+                        let existing_len = last.get_children().len();
+                        let new_children: Vec<Node<N, L>> =
+                            n.get_children().iter().cloned().collect();
+                        let total_children = existing_len + new_children.len();
+                        if total_children <= MAX_CHILDREN {
+                            last.shared_mut()
+                                .replace_child_range(existing_len..existing_len, &new_children);
+                            tos.push(last);
                         } else {
                             // Note: this leans left. Splitting at midpoint is also an option
-                            let splitpoint = min(MAX_CHILDREN, n_children - MIN_CHILDREN);
-                            let mut iter = children1.iter().chain(children2.iter()).cloned();
-                            let left = iter.by_ref().take(splitpoint).collect();
-                            let right = iter.collect();
-                            tos.push(Node::from_nodes(left));
-                            tos.push(Node::from_nodes(right));
+                            let mut combined: Vec<Node<N, L>> =
+                                last.get_children().iter().cloned().collect();
+                            combined.extend(new_children);
+                            let splitpoint = min(MAX_CHILDREN, total_children - MIN_CHILDREN);
+                            let left_nodes = combined[..splitpoint].to_vec();
+                            let right_nodes = combined[splitpoint..].to_vec();
+                            let left =
+                                Node::from_shared(last.shared().clone_with_children(&left_nodes));
+                            let right =
+                                Node::from_shared(last.shared().clone_with_children(&right_nodes));
+                            tos.push(left);
+                            tos.push(right);
                         }
                     }
                     if tos.len() < MAX_CHILDREN {
@@ -553,11 +709,11 @@ impl<N: NodeInfo<L>, L: Leaf> TreeBuilder<N, L> {
             self.push(n.clone());
             return;
         }
-        match n.0.val {
-            NodeVal::Leaf(ref l) => {
+        match &n.body().val {
+            NodeVal::Leaf(l) => {
                 self.push_leaf_slice(l, iv);
             }
-            NodeVal::Internal(ref v) => {
+            NodeVal::Internal(v) => {
                 let mut offset = 0;
                 for child in v {
                     if iv.is_before(offset) {
