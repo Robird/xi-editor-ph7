@@ -40,8 +40,8 @@ pub enum DeltaElement<N: NodeInfo<L>, L: Leaf> {
 /// `[Copy(0,1),Copy(2,4),Insert("e")]`
 #[derive(Clone)]
 pub struct Delta<N: NodeInfo<L>, L: Leaf> {
-    pub els: Vec<DeltaElement<N, L>>,
-    pub base_len: usize,
+    pub(crate) els: Vec<DeltaElement<N, L>>,
+    pub(crate) base_len: usize,
 }
 
 /// A struct marking that a Delta contains only insertions. That is, it copies
@@ -51,6 +51,42 @@ pub struct Delta<N: NodeInfo<L>, L: Leaf> {
 pub struct InsertDelta<N: NodeInfo<L>, L: Leaf>(Delta<N, L>);
 
 impl<N: NodeInfo<L>, L: Leaf> Delta<N, L> {
+    #[cfg_attr(not(feature = "serde"), allow(dead_code))]
+    pub(crate) fn base_len(&self) -> usize {
+        self.base_len
+    }
+
+    #[cfg_attr(not(feature = "serde"), allow(dead_code))]
+    pub(crate) fn element_count(&self) -> usize {
+        self.els.len()
+    }
+
+    #[cfg_attr(not(feature = "serde"), allow(dead_code))]
+    pub(crate) fn iter_elements(&self) -> ElementIter<'_, N, L> {
+        ElementIter { iter: self.els.iter() }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn element_triples(&self) -> ElementTripleIter<'_, N, L> {
+        ElementTripleIter { iter: self.els.iter(), new_offset: 0 }
+    }
+
+    #[cfg_attr(not(feature = "serde"), allow(dead_code))]
+    pub(crate) fn from_element_vec(
+        base_len: usize,
+        elements: Vec<DeltaElement<N, L>>,
+    ) -> Delta<N, L> {
+        Delta { els: elements, base_len }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn from_element_tuples<I>(base_len: usize, elements: I) -> Delta<N, L>
+    where
+        I: IntoIterator<Item = DeltaElement<N, L>>,
+    {
+        Delta::from_element_vec(base_len, elements.into_iter().collect())
+    }
+
     pub fn simple_edit<T: IntervalBounds>(
         interval: T,
         rope: Node<N, L>,
@@ -705,6 +741,49 @@ impl<'a, N: NodeInfo<L>, L: Leaf> Iterator for DeletionsIter<'a, N, L> {
     }
 }
 
+#[cfg_attr(not(feature = "serde"), allow(dead_code))]
+pub(crate) struct ElementIter<'a, N: NodeInfo<L> + 'a, L: Leaf> {
+    iter: slice::Iter<'a, DeltaElement<N, L>>,
+}
+
+impl<'a, N: NodeInfo<L>, L: Leaf> Iterator for ElementIter<'a, N, L> {
+    type Item = &'a DeltaElement<N, L>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.iter.size_hint()
+    }
+}
+
+impl<'a, N: NodeInfo<L>, L: Leaf> ExactSizeIterator for ElementIter<'a, N, L> {}
+
+#[allow(dead_code)]
+pub(crate) struct ElementTripleIter<'a, N: NodeInfo<L> + 'a, L: Leaf> {
+    iter: slice::Iter<'a, DeltaElement<N, L>>,
+    new_offset: usize,
+}
+
+impl<'a, N: NodeInfo<L>, L: Leaf> Iterator for ElementTripleIter<'a, N, L> {
+    type Item = (bool, usize, usize);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.iter.next()? {
+            DeltaElement::Copy(start, end) => {
+                self.new_offset += end - start;
+                Some((false, *start, *end))
+            }
+            DeltaElement::Insert(node) => {
+                let start = self.new_offset;
+                self.new_offset += node.len();
+                Some((true, start, self.new_offset))
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::delta::{Builder, Delta, DeltaElement, DeltaRegion};
@@ -855,14 +934,14 @@ mod tests {
         let d = builder.build();
         assert_eq!(false, d.is_simple_delete());
 
-        let delta = Delta {
-            els: vec![
+        let delta = Delta::from_element_tuples(
+            20,
+            vec![
                 DeltaElement::Copy(0, 10),
                 DeltaElement::Copy(12, 20),
                 DeltaElement::Insert(Rope::from("hi")),
             ],
-            base_len: 20,
-        };
+        );
 
         assert!(!delta.is_simple_delete());
     }
@@ -892,7 +971,7 @@ mod tests {
 #[cfg(all(test, feature = "serde"))]
 mod serde_tests {
     use crate::rope::{Rope, RopeInfo};
-    use crate::{Delta, Interval};
+    use crate::{Delta, DeltaElement, Interval};
     use serde_json;
 
     const TEST_STR: &str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -904,5 +983,28 @@ mod serde_tests {
         eprintln!("{:?}", &ser);
         let de: Delta<RopeInfo, String> = serde_json::from_value(ser).expect("deserialize failed");
         assert_eq!(d.apply_to_string(TEST_STR), de.apply_to_string(TEST_STR));
+    }
+
+    #[test]
+    fn delta_serialization_regression() {
+        let delta = Delta::from_element_tuples(
+            TEST_STR.len(),
+            vec![
+                DeltaElement::Copy(0, 3),
+                DeltaElement::Insert(Rope::from("[ins]")),
+                DeltaElement::Copy(8, 10),
+                DeltaElement::Insert(Rope::from("!")),
+                DeltaElement::Copy(15, TEST_STR.len()),
+            ],
+        );
+
+        let json = serde_json::to_string(&delta).expect("serialize failed");
+        assert_eq!(
+            json,
+            r#"{"els":[{"copy":[0,3]},{"insert":"[ins]"},{"copy":[8,10]},{"insert":"!"},{"copy":[15,62]}],"base_len":62}"#
+        );
+
+        let de: Delta<RopeInfo, String> = serde_json::from_str(&json).expect("deserialize failed");
+        assert_eq!(delta.apply_to_string(TEST_STR), de.apply_to_string(TEST_STR));
     }
 }
