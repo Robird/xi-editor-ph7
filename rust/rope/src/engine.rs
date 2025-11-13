@@ -328,7 +328,7 @@ impl Engine {
 
     /// A delta that, when applied to `base_rev`, results in the current head. Returns
     /// an error if there is not at least one edit.
-    pub fn try_delta_rev_head(&self, base_rev: RevToken) -> Result<Delta<RopeInfo>, Error> {
+    pub fn try_delta_rev_head(&self, base_rev: RevToken) -> Result<Delta<RopeInfo, String>, Error> {
         let ix = self.find_rev_token(base_rev).ok_or(Error::MissingRevision(base_rev))?;
         let prev_from_union = self.deletes_from_cur_union_for_index(ix);
         // TODO: this does 2 calls to Delta::synthesize and 1 to apply, this probably could be better.
@@ -352,7 +352,7 @@ impl Engine {
         new_priority: usize,
         undo_group: usize,
         base_rev: RevToken,
-        delta: Delta<RopeInfo>,
+        delta: Delta<RopeInfo, String>,
     ) -> Result<(Revision, Rope, Rope, Subset), Error> {
         let ix = self.find_rev_token(base_rev).ok_or(Error::MissingRevision(base_rev))?;
 
@@ -442,7 +442,7 @@ impl Engine {
         priority: usize,
         undo_group: usize,
         base_rev: RevToken,
-        delta: Delta<RopeInfo>,
+        delta: Delta<RopeInfo, String>,
     ) {
         self.try_edit_rev(priority, undo_group, base_rev, delta).unwrap();
     }
@@ -457,7 +457,7 @@ impl Engine {
         priority: usize,
         undo_group: usize,
         base_rev: RevToken,
-        delta: Delta<RopeInfo>,
+        delta: Delta<RopeInfo, String>,
     ) -> Result<(), Error> {
         let (new_rev, new_text, new_tombstones, new_deletes_from_union) =
             self.mk_new_rev(priority, undo_group, base_rev, delta)?;
@@ -809,7 +809,7 @@ struct DeltaOp {
     rev_id: RevId,
     priority: usize,
     undo_group: usize,
-    inserts: InsertDelta<RopeInfo>,
+    inserts: InsertDelta<RopeInfo, String>,
     deletes: Subset,
 }
 
@@ -977,7 +977,7 @@ mod tests {
 
     const TEST_STR: &str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
-    fn build_delta_1() -> Delta<RopeInfo> {
+    fn build_delta_1() -> Delta<RopeInfo, String> {
         let mut d_builder = Builder::new(TEST_STR.len());
         d_builder.delete(Interval::new(10, 36));
         d_builder.replace(Interval::new(39, 42), Rope::from("DEEF"));
@@ -986,7 +986,7 @@ mod tests {
         d_builder.build()
     }
 
-    fn build_delta_2() -> Delta<RopeInfo> {
+    fn build_delta_2() -> Delta<RopeInfo, String> {
         let mut d_builder = Builder::new(TEST_STR.len());
         d_builder.replace(Interval::new(1, 3), Rope::from("!"));
         d_builder.delete(Interval::new(10, 36));
@@ -1498,7 +1498,7 @@ mod tests {
         Assert(usize, String),
         AssertAll(String),
         AssertMaxUndoSoFar(usize, usize),
-        Edit { ei: usize, p: usize, u: usize, d: Delta<RopeInfo> },
+        Edit { ei: usize, p: usize, u: usize, d: Delta<RopeInfo, String> },
     }
 
     #[derive(Debug)]

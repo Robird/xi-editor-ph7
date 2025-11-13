@@ -27,7 +27,7 @@ use crate::tree::{Cursor, Leaf, Node, NodeInfo, TreeBuilder};
 const MIN_LEAF: usize = 32;
 const MAX_LEAF: usize = 64;
 
-pub type Spans<T> = Node<SpansInfo<T>>;
+pub type Spans<T> = Node<SpansInfo<T>, SpansLeaf<T>>;
 
 #[derive(Clone)]
 pub struct Span<T: Clone> {
@@ -93,9 +93,7 @@ impl<T: Clone> Leaf for SpansLeaf<T> {
     }
 }
 
-impl<T: Clone> NodeInfo for SpansInfo<T> {
-    type L = SpansLeaf<T>;
-
+impl<T: Clone> NodeInfo<SpansLeaf<T>> for SpansInfo<T> {
     fn accumulate(&mut self, other: &Self) {
         self.n_spans += other.n_spans;
         self.iv = self.iv.union(other.iv);
@@ -111,7 +109,7 @@ impl<T: Clone> NodeInfo for SpansInfo<T> {
 }
 
 pub struct SpansBuilder<T: Clone> {
-    b: TreeBuilder<SpansInfo<T>>,
+    b: TreeBuilder<SpansInfo<T>, SpansLeaf<T>>,
     leaf: SpansLeaf<T>,
     len: usize,
     total_len: usize,
@@ -119,7 +117,12 @@ pub struct SpansBuilder<T: Clone> {
 
 impl<T: Clone> SpansBuilder<T> {
     pub fn new(total_len: usize) -> Self {
-        SpansBuilder { b: TreeBuilder::new(), leaf: SpansLeaf::default(), len: 0, total_len }
+        SpansBuilder {
+            b: TreeBuilder::<SpansInfo<T>, SpansLeaf<T>>::new(),
+            leaf: SpansLeaf::default(),
+            len: 0,
+            total_len,
+        }
     }
 
     // Precondition: spans must be added in nondecreasing start order.
@@ -145,7 +148,7 @@ impl<T: Clone> SpansBuilder<T> {
 }
 
 pub struct SpanIter<'a, T: 'a + Clone> {
-    cursor: Cursor<'a, SpansInfo<T>>,
+    cursor: Cursor<'a, SpansInfo<T>, SpansLeaf<T>>,
     ix: usize,
 }
 
@@ -155,12 +158,16 @@ impl<T: Clone> Spans<T> {
     // the tree, and only delve into subtrees that are transformed.
     /// Perform operational transformation on a spans object intended to be edited into
     /// a sequence at the given offset.
-    pub fn transform<N: NodeInfo>(
+    pub fn transform<N, L>(
         &self,
         base_start: usize,
         base_end: usize,
-        xform: &mut Transformer<N>,
-    ) -> Self {
+        xform: &mut Transformer<'_, N, L>,
+    ) -> Self
+    where
+        N: NodeInfo<L>,
+        L: Leaf,
+    {
         // TODO: maybe should take base as an Interval and figure out "after" from that
         let new_start = xform.transform(base_start, false);
         let new_end = xform.transform(base_end, true);
@@ -296,8 +303,8 @@ impl<T: Clone> Spans<T> {
     ///
     /// This is intended to be used to keep spans up to date with a `Rope`
     /// as edits occur.
-    pub fn apply_shape<M: NodeInfo>(&mut self, delta: &Delta<M>) {
-        let mut b = TreeBuilder::new();
+    pub fn apply_shape<M: NodeInfo<L>, L: Leaf>(&mut self, delta: &Delta<M, L>) {
+        let mut b = TreeBuilder::<SpansInfo<T>, SpansLeaf<T>>::new();
         for elem in &delta.els {
             match *elem {
                 DeltaElement::Copy(beg, end) => b.push(self.subseq(Interval::new(beg, end))),

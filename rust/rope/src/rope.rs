@@ -83,13 +83,13 @@ const MAX_LEAF: usize = 1024;
 /// a.edit(1..9, "era");
 /// assert_eq!("herald", String::from(a));
 /// ```
-pub type Rope = Node<RopeInfo>;
+pub type Rope = Node<RopeInfo, String>;
 
 /// Represents a transform from one rope to another.
-pub type RopeDelta = Delta<RopeInfo>;
+pub type RopeDelta = Delta<RopeInfo, String>;
 
 /// An element in a `RopeDelta`.
-pub type RopeDeltaElement = DeltaElement<RopeInfo>;
+pub type RopeDeltaElement = DeltaElement<RopeInfo, String>;
 
 impl Leaf for String {
     fn len(&self) -> usize {
@@ -122,9 +122,7 @@ pub struct RopeInfo {
     utf16_size: usize,
 }
 
-impl NodeInfo for RopeInfo {
-    type L = String;
-
+impl NodeInfo<String> for RopeInfo {
     fn accumulate(&mut self, other: &Self) {
         self.lines += other.lines;
         self.utf16_size += other.utf16_size;
@@ -139,12 +137,12 @@ impl NodeInfo for RopeInfo {
     }
 }
 
-impl DefaultMetricProvider for RopeInfo {
-    fn convert_from_default<M: Metric<Self, Self::L>>(node: &Node<Self>, offset: usize) -> usize {
+impl DefaultMetricProvider<String> for RopeInfo {
+    fn convert_from_default<M: Metric<Self, String>>(node: &Node<Self, String>, offset: usize) -> usize {
         node.convert_metrics::<BaseMetric, M>(offset)
     }
 
-    fn convert_to_default<M: Metric<Self, Self::L>>(node: &Node<Self>, offset: usize) -> usize {
+    fn convert_to_default<M: Metric<Self, String>>(node: &Node<Self, String>, offset: usize) -> usize {
         node.convert_metrics::<M, BaseMetric>(offset)
     }
 }
@@ -384,7 +382,7 @@ fn find_leaf_split(s: &str, minsplit: usize) -> usize {
 impl FromStr for Rope {
     type Err = ParseError;
     fn from_str(s: &str) -> Result<Rope, Self::Err> {
-        let mut b = TreeBuilder::new();
+        let mut b = TreeBuilder::<RopeInfo, String>::new();
         b.push_str(s);
         Ok(b.build())
     }
@@ -564,7 +562,7 @@ impl Rope {
 
 // should make this generic, but most leaf types aren't going to be sliceable
 pub struct ChunkIter<'a> {
-    cursor: Cursor<'a, RopeInfo>,
+    cursor: Cursor<'a, RopeInfo, String>,
     end: usize,
 }
 
@@ -582,7 +580,7 @@ impl<'a> Iterator for ChunkIter<'a> {
     }
 }
 
-impl TreeBuilder<RopeInfo> {
+impl TreeBuilder<RopeInfo, String> {
     /// Push a string on the accumulating tree in the naive way.
     ///
     /// Splits the provided string in chunks that fit in a leaf
@@ -644,7 +642,7 @@ impl fmt::Debug for Rope {
 impl Add for Rope {
     type Output = Rope;
     fn add(self, rhs: Rope) -> Rope {
-        let mut b = TreeBuilder::new();
+        let mut b = TreeBuilder::<RopeInfo, String>::new();
         b.push(self);
         b.push(rhs);
         b.build()
@@ -653,7 +651,7 @@ impl Add for Rope {
 
 //additional cursor features
 
-impl<'a> Cursor<'a, RopeInfo> {
+impl<'a> Cursor<'a, RopeInfo, String> {
     /// Get previous codepoint before cursor position, and advance cursor backwards.
     pub fn prev_codepoint(&mut self) -> Option<char> {
         self.prev::<BaseMetric>();

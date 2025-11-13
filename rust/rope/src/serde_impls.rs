@@ -21,7 +21,7 @@ use serde::ser::{Serialize, SerializeStruct, SerializeTupleVariant, Serializer};
 use crate::tree::Node;
 use crate::{Delta, DeltaElement, Rope, RopeInfo};
 
-// Interim serializable types used for (de)serializing `Delta<RopeInfo>`.
+// Interim serializable types used for (de)serializing `Delta<RopeInfo, String>`.
 // These are defined at module-level so derive macros generate impls at the
 // correct (non-nested) scope; this avoids `non_local_definitions` lint
 // failures when serde attributes are used inside function bodies.
@@ -31,7 +31,7 @@ use crate::{Delta, DeltaElement, Rope, RopeInfo};
 #[allow(clippy::non_local_definitions)]
 enum RopeDeltaElement_ {
     Copy(usize, usize),
-    Insert(Node<RopeInfo>),
+    Insert(Node<RopeInfo, String>),
 }
 
 #[cfg(feature = "serde")]
@@ -42,8 +42,8 @@ struct RopeDelta_ {
     base_len: usize,
 }
 
-impl From<RopeDeltaElement_> for DeltaElement<RopeInfo> {
-    fn from(elem: RopeDeltaElement_) -> DeltaElement<RopeInfo> {
+impl From<RopeDeltaElement_> for DeltaElement<RopeInfo, String> {
+    fn from(elem: RopeDeltaElement_) -> DeltaElement<RopeInfo, String> {
         match elem {
             RopeDeltaElement_::Copy(start, end) => DeltaElement::Copy(start, end),
             RopeDeltaElement_::Insert(rope) => DeltaElement::Insert(rope),
@@ -51,8 +51,8 @@ impl From<RopeDeltaElement_> for DeltaElement<RopeInfo> {
     }
 }
 
-impl From<RopeDelta_> for Delta<RopeInfo> {
-    fn from(mut delta: RopeDelta_) -> Delta<RopeInfo> {
+impl From<RopeDelta_> for Delta<RopeInfo, String> {
+    fn from(mut delta: RopeDelta_) -> Delta<RopeInfo, String> {
         Delta { els: delta.els.drain(..).map(DeltaElement::from).collect(), base_len: delta.base_len }
     }
 }
@@ -92,7 +92,7 @@ impl<'de> Visitor<'de> for RopeVisitor {
     }
 }
 
-impl Serialize for DeltaElement<RopeInfo> {
+impl Serialize for DeltaElement<RopeInfo, String> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -111,7 +111,7 @@ impl Serialize for DeltaElement<RopeInfo> {
     }
 }
 
-impl Serialize for Delta<RopeInfo> {
+impl Serialize for Delta<RopeInfo, String> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -123,7 +123,7 @@ impl Serialize for Delta<RopeInfo> {
     }
 }
 
-impl<'de> Deserialize<'de> for Delta<RopeInfo> {
+impl<'de> Deserialize<'de> for Delta<RopeInfo, String> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,

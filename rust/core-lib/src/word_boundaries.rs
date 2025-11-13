@@ -18,7 +18,7 @@
 use xi_rope::{Cursor, Rope, RopeInfo};
 
 pub struct WordCursor<'a> {
-    inner: Cursor<'a, RopeInfo>,
+    inner: Cursor<'a, RopeInfo, String>,
 }
 
 impl<'a> WordCursor<'a> {

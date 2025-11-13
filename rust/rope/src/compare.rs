@@ -187,8 +187,8 @@ pub fn ne_idx_rev_fallback(one: &[u8], two: &[u8]) -> Option<usize> {
 
 /// Utility for efficiently comparing two ropes.
 pub struct RopeScanner<'a> {
-    base: Cursor<'a, RopeInfo>,
-    target: Cursor<'a, RopeInfo>,
+    base: Cursor<'a, RopeInfo, String>,
+    target: Cursor<'a, RopeInfo, String>,
     base_chunk: &'a str,
     target_chunk: &'a str,
     scanned: usize,

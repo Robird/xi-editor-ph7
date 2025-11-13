@@ -21,11 +21,15 @@ use crate::compare::RopeScanner;
 use crate::delta::{Delta, DeltaElement};
 use crate::interval::Interval;
 use crate::rope::{LinesMetric, Rope, RopeDelta, RopeInfo};
-use crate::tree::{Node, NodeInfo};
+use crate::tree::{Leaf, Node, NodeInfo};
 
 /// A trait implemented by various diffing strategies.
-pub trait Diff<N: NodeInfo> {
-    fn compute_delta(base: &Node<N>, target: &Node<N>) -> Delta<N>;
+pub trait Diff<N, L>
+where
+    N: NodeInfo<L>,
+    L: Leaf,
+{
+    fn compute_delta(base: &Node<N, L>, target: &Node<N, L>) -> Delta<N, L>;
 }
 
 /// The minimum length of non-whitespace characters in a line before
@@ -47,7 +51,7 @@ const MIN_SIZE: usize = 32;
 /// using a suffix array, while being an order of magnitude faster.
 pub struct LineHashDiff;
 
-impl Diff<RopeInfo> for LineHashDiff {
+impl Diff<RopeInfo, String> for LineHashDiff {
     fn compute_delta(base: &Rope, target: &Rope) -> RopeDelta {
         let mut builder = DiffBuilder::default();
 

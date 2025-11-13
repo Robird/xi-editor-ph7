@@ -34,7 +34,7 @@ pub fn find_deletions(substr: &str, s: &str) -> Subset {
     sb.build()
 }
 
-impl Delta<RopeInfo> {
+impl Delta<RopeInfo, String> {
     pub fn apply_to_string(&self, s: &str) -> String {
         String::from(self.apply(&Rope::from(s)))
     }
@@ -72,7 +72,7 @@ pub fn debug_subsets(subsets: &[Subset]) {
     }
 }
 
-pub fn parse_delta(s: &str) -> Delta<RopeInfo> {
+pub fn parse_delta(s: &str) -> Delta<RopeInfo, String> {
     let base_len = s.chars().filter(|c| *c == '-' || *c == '!').count();
     let mut b = delta::Builder::new(base_len);
 

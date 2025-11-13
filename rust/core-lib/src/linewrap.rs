@@ -17,7 +17,7 @@
 use std::cmp::Ordering;
 use std::ops::Range;
 
-use xi_rope::breaks::{BreakBuilder, Breaks, BreaksInfo, BreaksMetric};
+use xi_rope::breaks::{BreakBuilder, Breaks, BreaksInfo, BreaksLeaf, BreaksMetric};
 use xi_rope::spans::Spans;
 use xi_rope::{Cursor, Interval, LinesMetric, Rope, RopeDelta, RopeInfo};
 use crate::trace::trace_block;
@@ -561,7 +561,7 @@ impl<'a> RewrapCtx<'a> {
 }
 
 struct LineBreakCursor<'a> {
-    inner: Cursor<'a, RopeInfo>,
+    inner: Cursor<'a, RopeInfo, String>,
     lb_iter: LineBreakLeafIter,
     last_byte: u8,
 }
@@ -639,8 +639,8 @@ impl<'a> Iterator for VisualLines<'a> {
 ///
 /// `self.offset == self.text.pos().min(self.soft.pos())`.
 struct MergedBreaks<'a> {
-    text: Cursor<'a, RopeInfo>,
-    soft: Cursor<'a, BreaksInfo>,
+    text: Cursor<'a, RopeInfo, String>,
+    soft: Cursor<'a, BreaksInfo, BreaksLeaf>,
     offset: usize,
     /// Starting from zero, how many calls to `next` to get to `self.offset`?
     cur_line: usize,

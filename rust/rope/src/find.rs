@@ -63,7 +63,7 @@ pub enum CaseMatching {
 ///
 /// Can panic if `pat` is empty.
 pub fn find(
-    cursor: &mut Cursor<RopeInfo>,
+    cursor: &mut Cursor<RopeInfo, String>,
     lines: &mut LinesRaw,
     cm: CaseMatching,
     pat: &str,
@@ -88,7 +88,7 @@ pub fn find(
 ///
 /// [find]: fn.find.html
 pub fn find_progress(
-    cursor: &mut Cursor<RopeInfo>,
+    cursor: &mut Cursor<RopeInfo, String>,
     lines: &mut LinesRaw,
     cm: CaseMatching,
     pat: &str,
@@ -148,11 +148,11 @@ pub fn find_progress(
 
 // Run the core repeatedly until there is a result, up to a certain number of steps.
 fn find_progress_iter(
-    cursor: &mut Cursor<RopeInfo>,
+    cursor: &mut Cursor<RopeInfo, String>,
     lines: &mut LinesRaw,
     pat: &str,
     scanner: impl Fn(&str) -> Option<usize>,
-    matcher: impl Fn(&mut Cursor<RopeInfo>, &mut LinesRaw, &str) -> Option<usize>,
+    matcher: impl Fn(&mut Cursor<RopeInfo, String>, &mut LinesRaw, &str) -> Option<usize>,
     num_steps: usize,
 ) -> FindResult {
     for _ in 0..num_steps {
@@ -169,11 +169,11 @@ fn find_progress_iter(
 // then a "matcher" which confirms that such a candidate actually matches
 // in the full rope.
 fn find_core(
-    cursor: &mut Cursor<RopeInfo>,
+    cursor: &mut Cursor<RopeInfo, String>,
     lines: &mut LinesRaw,
     pat: &str,
     scanner: impl Fn(&str) -> Option<usize>,
-    matcher: impl Fn(&mut Cursor<RopeInfo>, &mut LinesRaw, &str) -> Option<usize>,
+    matcher: impl Fn(&mut Cursor<RopeInfo, String>, &mut LinesRaw, &str) -> Option<usize>,
 ) -> FindResult {
     let orig_pos = cursor.pos();
 
@@ -204,7 +204,7 @@ fn find_core(
 /// position on failure, but the end of the string on success. Returns the
 /// start position of the match.
 pub fn compare_cursor_str(
-    cursor: &mut Cursor<RopeInfo>,
+    cursor: &mut Cursor<RopeInfo, String>,
     _lines: &mut LinesRaw,
     mut pat: &str,
 ) -> Option<usize> {
@@ -236,7 +236,7 @@ pub fn compare_cursor_str(
 /// normalize both strings before comparison). Returns the start position
 /// of the match.
 pub fn compare_cursor_str_casei(
-    cursor: &mut Cursor<RopeInfo>,
+    cursor: &mut Cursor<RopeInfo, String>,
     _lines: &mut LinesRaw,
     pat: &str,
 ) -> Option<usize> {
@@ -273,7 +273,7 @@ pub fn compare_cursor_str_casei(
 /// is consumed and matched against the regular expression. Otherwise only
 /// the current line is matched. Returns the start position of the match.
 pub fn compare_cursor_regex(
-    cursor: &mut Cursor<RopeInfo>,
+    cursor: &mut Cursor<RopeInfo, String>,
     lines: &mut LinesRaw,
     pat: &str,
     regex: &Regex,

@@ -18,17 +18,17 @@
 
 use crate::interval::{Interval, IntervalBounds};
 use crate::multiset::{CountMatcher, Subset, SubsetBuilder};
-use crate::tree::{Node, NodeInfo, TreeBuilder};
+use crate::tree::{Leaf, Node, NodeInfo, TreeBuilder};
 use std::cmp::min;
 use std::fmt;
 use std::ops::Deref;
 use std::slice;
 
 #[derive(Clone)]
-pub enum DeltaElement<N: NodeInfo> {
+pub enum DeltaElement<N: NodeInfo<L>, L: Leaf> {
     /// Represents a range of text in the base document. Includes beginning, excludes end.
     Copy(usize, usize), // note: for now, we lose open/closed info at interval endpoints
-    Insert(Node<N>),
+    Insert(Node<N, L>),
 }
 
 /// Represents changes to a document by describing the new document as a
@@ -39,8 +39,8 @@ pub enum DeltaElement<N: NodeInfo> {
 /// For example, Editing "abcd" into "acde" could be represented as:
 /// `[Copy(0,1),Copy(2,4),Insert("e")]`
 #[derive(Clone)]
-pub struct Delta<N: NodeInfo> {
-    pub els: Vec<DeltaElement<N>>,
+pub struct Delta<N: NodeInfo<L>, L: Leaf> {
+    pub els: Vec<DeltaElement<N, L>>,
     pub base_len: usize,
 }
 
@@ -48,10 +48,14 @@ pub struct Delta<N: NodeInfo> {
 /// all of the old document in the same order. It has a `Deref` impl so all
 /// normal `Delta` methods can also be used on it.
 #[derive(Clone)]
-pub struct InsertDelta<N: NodeInfo>(Delta<N>);
+pub struct InsertDelta<N: NodeInfo<L>, L: Leaf>(Delta<N, L>);
 
-impl<N: NodeInfo> Delta<N> {
-    pub fn simple_edit<T: IntervalBounds>(interval: T, rope: Node<N>, base_len: usize) -> Delta<N> {
+impl<N: NodeInfo<L>, L: Leaf> Delta<N, L> {
+    pub fn simple_edit<T: IntervalBounds>(
+        interval: T,
+        rope: Node<N, L>,
+        base_len: usize,
+    ) -> Delta<N, L> {
         let mut builder = Builder::new(base_len);
         if rope.is_empty() {
             builder.delete(interval);
@@ -62,7 +66,7 @@ impl<N: NodeInfo> Delta<N> {
     }
 
     /// If this delta represents a simple insertion, returns the inserted node.
-    pub fn as_simple_insert(&self) -> Option<&Node<N>> {
+    pub fn as_simple_insert(&self) -> Option<&Node<N, L>> {
         let mut iter = self.els.iter();
         let mut el = iter.next();
         let mut i = 0;
@@ -133,7 +137,7 @@ impl<N: NodeInfo> Delta<N> {
 
     /// Apply the delta to the given rope. May not work well if the length of the rope
     /// is not compatible with the construction of the delta.
-    pub fn apply(&self, base: &Node<N>) -> Node<N> {
+    pub fn apply(&self, base: &Node<N, L>) -> Node<N, L> {
         debug_assert_eq!(base.len(), self.base_len, "must apply Delta to Node of correct length");
         let mut b = TreeBuilder::new();
         for elem in &self.els {
@@ -152,13 +156,13 @@ impl<N: NodeInfo> Delta<N> {
     /// # use xi_rope::rope::{Rope, RopeInfo};
     /// # use xi_rope::delta::Delta;
     /// # use std::str::FromStr;
-    /// fn test_factor(d : &Delta<RopeInfo>, r : &Rope) {
+    /// fn test_factor(d : &Delta<RopeInfo, String>, r : &Rope) {
     ///     let (ins, del) = d.clone().factor();
     ///     let del2 = del.transform_expand(&ins.inserted_subset());
     ///     assert_eq!(String::from(del2.delete_from(&ins.apply(r))), String::from(d.apply(r)));
     /// }
     /// ```
-    pub fn factor(self) -> (InsertDelta<N>, Subset) {
+    pub fn factor(self) -> (InsertDelta<N, L>, Subset) {
         let mut ins = Vec::new();
         let mut sb = SubsetBuilder::new();
         let mut b1 = 0;
@@ -203,7 +207,7 @@ impl<N: NodeInfo> Delta<N> {
     /// # use xi_rope::rope::{Rope, RopeInfo};
     /// # use xi_rope::delta::Delta;
     /// # use std::str::FromStr;
-    /// fn test_synthesize(d : &Delta<RopeInfo>, r : &Rope) {
+    /// fn test_synthesize(d : &Delta<RopeInfo, String>, r : &Rope) {
     ///     let (ins_d, del) = d.clone().factor();
     ///     let ins = ins_d.inserted_subset();
     ///     let del2 = del.transform_expand(&ins);
@@ -216,7 +220,11 @@ impl<N: NodeInfo> Delta<N> {
     // For if last_old.is_some() && last_old.unwrap().0 <= beg {. Clippy complaints
     // about not using if-let, but that'd change the meaning of the conditional.
     #[allow(clippy::unnecessary_unwrap)]
-    pub fn synthesize(tombstones: &Node<N>, from_dels: &Subset, to_dels: &Subset) -> Delta<N> {
+    pub fn synthesize(
+        tombstones: &Node<N, L>,
+        from_dels: &Subset,
+        to_dels: &Subset,
+    ) -> Delta<N, L> {
         let base_len = from_dels.len_after_delete();
         let mut els = Vec::new();
         let mut x = 0;
@@ -311,7 +319,7 @@ impl<N: NodeInfo> Delta<N> {
         Delta::total_element_len(self.els.as_slice())
     }
 
-    fn total_element_len(els: &[DeltaElement<N>]) -> usize {
+    fn total_element_len(els: &[DeltaElement<N, L>]) -> usize {
         els.iter().fold(0, |sum, el| {
             sum + match *el {
                 DeltaElement::Copy(beg, end) => end - beg,
@@ -331,19 +339,19 @@ impl<N: NodeInfo> Delta<N> {
     }
 
     /// Iterates over all the inserts of the delta.
-    pub fn iter_inserts(&self) -> InsertsIter<'_, N> {
+    pub fn iter_inserts(&self) -> InsertsIter<'_, N, L> {
         InsertsIter { pos: 0, last_end: 0, els_iter: self.els.iter() }
     }
 
     /// Iterates over all the deletions of the delta.
-    pub fn iter_deletions(&self) -> DeletionsIter<'_, N> {
+    pub fn iter_deletions(&self) -> DeletionsIter<'_, N, L> {
         DeletionsIter { pos: 0, last_end: 0, base_len: self.base_len, els_iter: self.els.iter() }
     }
 }
 
-impl<N: NodeInfo> fmt::Debug for Delta<N>
+impl<N: NodeInfo<L>, L: Leaf> fmt::Debug for Delta<N, L>
 where
-    Node<N>: fmt::Debug,
+    Node<N, L>: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if f.alternate() {
@@ -375,23 +383,23 @@ where
     }
 }
 
-impl<N: NodeInfo> fmt::Debug for InsertDelta<N>
+impl<N: NodeInfo<L>, L: Leaf> fmt::Debug for InsertDelta<N, L>
 where
-    Node<N>: fmt::Debug,
+    Node<N, L>: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.0.fmt(f)
     }
 }
 
-impl<N: NodeInfo> InsertDelta<N> {
+impl<N: NodeInfo<L>, L: Leaf> InsertDelta<N, L> {
     #![allow(clippy::many_single_char_names)]
     /// Do a coordinate transformation on an insert-only delta. The `after` parameter
     /// controls whether the insertions in `self` come after those specific in the
     /// coordinate transform.
     //
     // TODO: write accurate equations
-    pub fn transform_expand(&self, xform: &Subset, after: bool) -> InsertDelta<N> {
+    pub fn transform_expand(&self, xform: &Subset, after: bool) -> InsertDelta<N, L> {
         let cur_els = &self.0.els;
         let mut els = Vec::new();
         let mut x = 0; // coordinate within self
@@ -452,7 +460,7 @@ impl<N: NodeInfo> InsertDelta<N> {
     /// the same base. For example, if `self` applies to a union string, and
     /// `xform` is the deletions from that union, the resulting Delta will
     /// apply to the text.
-    pub fn transform_shrink(&self, xform: &Subset) -> InsertDelta<N> {
+    pub fn transform_shrink(&self, xform: &Subset) -> InsertDelta<N, L> {
         let mut m = xform.mapper(CountMatcher::Zero);
         let els = self
             .0
@@ -490,10 +498,10 @@ impl<N: NodeInfo> InsertDelta<N> {
 /// An InsertDelta is a certain kind of Delta, and anything that applies to a
 /// Delta that may include deletes also applies to one that definitely
 /// doesn't. This impl allows implicit use of those methods.
-impl<N: NodeInfo> Deref for InsertDelta<N> {
-    type Target = Delta<N>;
+impl<N: NodeInfo<L>, L: Leaf> Deref for InsertDelta<N, L> {
+    type Target = Delta<N, L>;
 
-    fn deref(&self) -> &Delta<N> {
+    fn deref(&self) -> &Delta<N, L> {
         &self.0
     }
 }
@@ -502,13 +510,13 @@ impl<N: NodeInfo> Deref for InsertDelta<N> {
 /// A mapping from coordinates in the source sequence to coordinates in the sequence after
 /// the delta is applied.
 // like Delta but missing the strings, or perhaps the two subsets it's synthesized from.
-pub struct Transformer<'a, N: NodeInfo + 'a> {
-    delta: &'a Delta<N>,
+pub struct Transformer<'a, N: NodeInfo<L> + 'a, L: Leaf> {
+    delta: &'a Delta<N, L>,
 }
 
-impl<'a, N: NodeInfo + 'a> Transformer<'a, N> {
+impl<'a, N: NodeInfo<L> + 'a, L: Leaf> Transformer<'a, N, L> {
     /// Create a new transformer from a delta.
-    pub fn new(delta: &'a Delta<N>) -> Self {
+    pub fn new(delta: &'a Delta<N, L>) -> Self {
         Transformer { delta }
     }
 
@@ -572,14 +580,14 @@ impl<'a, N: NodeInfo + 'a> Transformer<'a, N> {
 ///
 /// Note that all edit operations must be sorted; the start point of each
 /// interval must be no less than the end point of the previous one.
-pub struct Builder<N: NodeInfo> {
-    delta: Delta<N>,
+pub struct Builder<N: NodeInfo<L>, L: Leaf> {
+    delta: Delta<N, L>,
     last_offset: usize,
 }
 
-impl<N: NodeInfo> Builder<N> {
+impl<N: NodeInfo<L>, L: Leaf> Builder<N, L> {
     /// Creates a new builder, applicable to a base rope of length `base_len`.
-    pub fn new(base_len: usize) -> Builder<N> {
+    pub fn new(base_len: usize) -> Builder<N, L> {
         Builder { delta: Delta { els: Vec::new(), base_len }, last_offset: 0 }
     }
 
@@ -596,7 +604,7 @@ impl<N: NodeInfo> Builder<N> {
 
     /// Replaces the given interval with the new rope. Panics if interval
     /// is not properly sorted.
-    pub fn replace<T: IntervalBounds>(&mut self, interval: T, rope: Node<N>) {
+    pub fn replace<T: IntervalBounds>(&mut self, interval: T, rope: Node<N, L>) {
         self.delete(interval);
         if !rope.is_empty() {
             self.delta.els.push(DeltaElement::Insert(rope));
@@ -609,7 +617,7 @@ impl<N: NodeInfo> Builder<N> {
     }
 
     /// Builds the `Delta`.
-    pub fn build(mut self) -> Delta<N> {
+    pub fn build(mut self) -> Delta<N, L> {
         if self.last_offset < self.delta.base_len {
             self.delta.els.push(DeltaElement::Copy(self.last_offset, self.delta.base_len));
         }
@@ -617,10 +625,10 @@ impl<N: NodeInfo> Builder<N> {
     }
 }
 
-pub struct InsertsIter<'a, N: NodeInfo + 'a> {
+pub struct InsertsIter<'a, N: NodeInfo<L> + 'a, L: Leaf> {
     pos: usize,
     last_end: usize,
-    els_iter: slice::Iter<'a, DeltaElement<N>>,
+    els_iter: slice::Iter<'a, DeltaElement<N, L>>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -636,7 +644,7 @@ impl DeltaRegion {
     }
 }
 
-impl<'a, N: NodeInfo> Iterator for InsertsIter<'a, N> {
+impl<'a, N: NodeInfo<L>, L: Leaf> Iterator for InsertsIter<'a, N, L> {
     type Item = DeltaRegion;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -659,14 +667,14 @@ impl<'a, N: NodeInfo> Iterator for InsertsIter<'a, N> {
     }
 }
 
-pub struct DeletionsIter<'a, N: NodeInfo + 'a> {
+pub struct DeletionsIter<'a, N: NodeInfo<L> + 'a, L: Leaf> {
     pos: usize,
     last_end: usize,
     base_len: usize,
-    els_iter: slice::Iter<'a, DeltaElement<N>>,
+    els_iter: slice::Iter<'a, DeltaElement<N, L>>,
 }
 
-impl<'a, N: NodeInfo> Iterator for DeletionsIter<'a, N> {
+impl<'a, N: NodeInfo<L>, L: Leaf> Iterator for DeletionsIter<'a, N, L> {
     type Item = DeltaRegion;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -837,13 +845,13 @@ mod tests {
         let d = Delta::simple_edit(Interval::new(10, 11), Rope::from(""), TEST_STR.len());
         assert_eq!(true, d.is_simple_delete());
 
-        let mut builder = Builder::<RopeInfo>::new(10);
+        let mut builder = Builder::<RopeInfo, String>::new(10);
         builder.delete(Interval::new(0, 2));
         builder.delete(Interval::new(4, 6));
         let d = builder.build();
         assert_eq!(false, d.is_simple_delete());
 
-        let builder = Builder::<RopeInfo>::new(10);
+        let builder = Builder::<RopeInfo, String>::new(10);
         let d = builder.build();
         assert_eq!(false, d.is_simple_delete());
 
@@ -894,7 +902,7 @@ mod serde_tests {
         let d = Delta::simple_edit(Interval::new(10, 12), Rope::from("+"), TEST_STR.len());
         let ser = serde_json::to_value(d.clone()).expect("serialize failed");
         eprintln!("{:?}", &ser);
-        let de: Delta<RopeInfo> = serde_json::from_value(ser).expect("deserialize failed");
+        let de: Delta<RopeInfo, String> = serde_json::from_value(ser).expect("deserialize failed");
         assert_eq!(d.apply_to_string(TEST_STR), de.apply_to_string(TEST_STR));
     }
 }

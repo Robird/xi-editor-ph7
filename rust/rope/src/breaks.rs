@@ -21,7 +21,7 @@ use std::cmp::min;
 use std::mem;
 
 /// A set of indexes. A motivating use is storing line breaks.
-pub type Breaks = Node<BreaksInfo>;
+pub type Breaks = Node<BreaksInfo, BreaksLeaf>;
 
 const MIN_LEAF: usize = 32;
 const MAX_LEAF: usize = 64;
@@ -79,9 +79,7 @@ impl Leaf for BreaksLeaf {
     }
 }
 
-impl NodeInfo for BreaksInfo {
-    type L = BreaksLeaf;
-
+impl NodeInfo<BreaksLeaf> for BreaksInfo {
     fn accumulate(&mut self, other: &Self) {
         self.0 += other.0;
     }
@@ -91,12 +89,18 @@ impl NodeInfo for BreaksInfo {
     }
 }
 
-impl DefaultMetricProvider for BreaksInfo {
-    fn convert_from_default<M: Metric<Self, Self::L>>(node: &Node<Self>, offset: usize) -> usize {
+impl DefaultMetricProvider<BreaksLeaf> for BreaksInfo {
+    fn convert_from_default<M: Metric<Self, BreaksLeaf>>(
+        node: &Node<Self, BreaksLeaf>,
+        offset: usize,
+    ) -> usize {
         node.convert_metrics::<BreaksBaseMetric, M>(offset)
     }
 
-    fn convert_to_default<M: Metric<Self, Self::L>>(node: &Node<Self>, offset: usize) -> usize {
+    fn convert_to_default<M: Metric<Self, BreaksLeaf>>(
+        node: &Node<Self, BreaksLeaf>,
+        offset: usize,
+    ) -> usize {
         node.convert_metrics::<M, BreaksBaseMetric>(offset)
     }
 }
@@ -209,18 +213,21 @@ impl Breaks {
     // other use cases, use the builder.
     pub fn new_no_break(len: usize) -> Breaks {
         let leaf = BreaksLeaf { len, data: vec![] };
-        Node::from_leaf(leaf)
+        Node::<BreaksInfo, BreaksLeaf>::from_leaf(leaf)
     }
 }
 
 pub struct BreakBuilder {
-    b: TreeBuilder<BreaksInfo>,
+    b: TreeBuilder<BreaksInfo, BreaksLeaf>,
     leaf: BreaksLeaf,
 }
 
 impl Default for BreakBuilder {
     fn default() -> BreakBuilder {
-        BreakBuilder { b: TreeBuilder::new(), leaf: BreaksLeaf::default() }
+        BreakBuilder {
+            b: TreeBuilder::<BreaksInfo, BreaksLeaf>::new(),
+            leaf: BreaksLeaf::default(),
+        }
     }
 }
 
@@ -232,7 +239,7 @@ impl BreakBuilder {
     pub fn add_break(&mut self, len: usize) {
         if self.leaf.data.len() == MAX_LEAF {
             let leaf = mem::take(&mut self.leaf);
-            self.b.push(Node::from_leaf(leaf));
+            self.b.push(Node::<BreaksInfo, BreaksLeaf>::from_leaf(leaf));
         }
         self.leaf.len += len;
         self.leaf.data.push(self.leaf.len);
@@ -243,19 +250,19 @@ impl BreakBuilder {
     }
 
     pub fn build(mut self) -> Breaks {
-        self.b.push(Node::from_leaf(self.leaf));
+        self.b.push(Node::<BreaksInfo, BreaksLeaf>::from_leaf(self.leaf));
         self.b.build()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::breaks::{BreakBuilder, BreaksInfo, BreaksLeaf, BreaksMetric};
+    use crate::breaks::{BreakBuilder, Breaks, BreaksInfo, BreaksLeaf, BreaksMetric};
     use crate::interval::Interval;
     use crate::tree::{Cursor, Node};
 
-    fn gen(n: usize) -> Node<BreaksInfo> {
-        let mut node = Node::default();
+    fn gen(n: usize) -> Breaks {
+        let mut node = Node::<BreaksInfo, BreaksLeaf>::default();
         let mut b = BreakBuilder::new();
         b.add_break(10);
         let testnode = b.build();
@@ -285,7 +292,7 @@ mod tests {
     #[test]
     fn one() {
         let testleaf = BreaksLeaf { len: 10, data: vec![10] };
-        let testnode = Node::<BreaksInfo>::from_leaf(testleaf.clone());
+        let testnode = Node::<BreaksInfo, BreaksLeaf>::from_leaf(testleaf.clone());
         assert_eq!(10, testnode.len());
         let mut c = Cursor::new(&testnode, 0);
         assert_eq!(c.get_leaf().unwrap().0, &testleaf);
@@ -304,7 +311,7 @@ mod tests {
     fn concat() {
         let left = gen(1);
         let right = gen(1);
-        let node = Node::concat(left, right);
+        let node = Node::<BreaksInfo, BreaksLeaf>::concat(left, right);
         assert_eq!(node.len(), 20);
         let mut c = Cursor::new(&node, 0);
         assert_eq!(10, c.next::<BreaksMetric>().unwrap());

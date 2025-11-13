@@ -18,7 +18,7 @@ use std::cmp;
 
 // These two imports are for the `apply` method only.
 use crate::interval::Interval;
-use crate::tree::{Node, NodeInfo, TreeBuilder};
+use crate::tree::{Leaf, Node, NodeInfo, TreeBuilder};
 use std::fmt;
 use std::slice;
 
@@ -148,7 +148,7 @@ impl Subset {
     // Maybe Subset should be a pure data structure and this method should
     // be a method of Node.
     /// Builds a version of `s` with all the elements in this `Subset` deleted from it.
-    pub fn delete_from<N: NodeInfo>(&self, s: &Node<N>) -> Node<N> {
+    pub fn delete_from<N: NodeInfo<L>, L: Leaf>(&self, s: &Node<N, L>) -> Node<N, L> {
         let mut b = TreeBuilder::new();
         for (beg, end) in self.range_iter(CountMatcher::Zero) {
             b.push_slice(s, Interval::new(beg, end));
