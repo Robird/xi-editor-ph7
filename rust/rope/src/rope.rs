@@ -26,7 +26,7 @@ use std::string::ParseError;
 
 use crate::delta::{Delta, DeltaElement};
 use crate::interval::{Interval, IntervalBounds};
-use crate::tree::{Cursor, DefaultMetric, Leaf, Metric, Node, NodeInfo, TreeBuilder};
+use crate::tree::{Cursor, DefaultMetricProvider, Leaf, Metric, Node, NodeInfo, TreeBuilder};
 
 use memchr::{memchr, memrchr};
 use unicode_segmentation::{GraphemeCursor, GraphemeIncomplete};
@@ -139,8 +139,14 @@ impl NodeInfo for RopeInfo {
     }
 }
 
-impl DefaultMetric for RopeInfo {
-    type DefaultMetric = BaseMetric;
+impl DefaultMetricProvider for RopeInfo {
+    fn convert_from_default<M: Metric<Self>>(node: &Node<Self>, offset: usize) -> usize {
+        node.convert_metrics::<BaseMetric, M>(offset)
+    }
+
+    fn convert_to_default<M: Metric<Self>>(node: &Node<Self>, offset: usize) -> usize {
+        node.convert_metrics::<M, BaseMetric>(offset)
+    }
 }
 
 //TODO: document metrics, based on https://github.com/google/xi-editor/issues/456

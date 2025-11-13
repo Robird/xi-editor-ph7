@@ -60,13 +60,13 @@ pub trait NodeInfo: Clone {
     }
 }
 
-/// A trait indicating the default metric of a NodeInfo.
+/// Provides conversions between the default metric of a node and other metrics.
 ///
-/// Adds quality of life functions to
-/// Node\<N\>, where N is a DefaultMetric.
-/// For example, [Node\<DefaultMetric\>.count](struct.Node.html#method.count).
-pub trait DefaultMetric: NodeInfo {
-    type DefaultMetric: Metric<Self>;
+/// Implementors supply the logic used by [`Node::count`] and
+/// [`Node::count_base_units`] to translate offsets between metrics.
+pub trait DefaultMetricProvider: NodeInfo {
+    fn convert_from_default<M: Metric<Self>>(node: &Node<Self>, offset: usize) -> usize;
+    fn convert_to_default<M: Metric<Self>>(node: &Node<Self>, offset: usize) -> usize;
 }
 
 /// A trait for the leaves of trees of type [Node](struct.Node.html).
@@ -427,8 +427,8 @@ impl<N: NodeInfo> Node<N> {
     }
 }
 
-impl<N: DefaultMetric> Node<N> {
-    /// Measures the length of the text bounded by ``DefaultMetric::measure(offset)`` with another metric.
+impl<N: DefaultMetricProvider> Node<N> {
+    /// Measures the length of the text bounded by the default metric offset using another metric.
     ///
     /// # Examples
     /// ```
@@ -442,10 +442,10 @@ impl<N: DefaultMetric> Node<N> {
     /// assert_eq!(2, num_lines);
     /// ```
     pub fn count<M: Metric<N>>(&self, offset: usize) -> usize {
-        self.convert_metrics::<N::DefaultMetric, M>(offset)
+        N::convert_from_default::<M>(self, offset)
     }
 
-    /// Measures the length of the text bounded by ``M::measure(offset)`` with the default metric.
+    /// Measures the length of the text bounded by another metric using the default metric.
     ///
     /// # Examples
     /// ```
@@ -459,7 +459,7 @@ impl<N: DefaultMetric> Node<N> {
     /// assert_eq!(12, byte_offset);
     /// ```
     pub fn count_base_units<M: Metric<N>>(&self, offset: usize) -> usize {
-        self.convert_metrics::<M, N::DefaultMetric>(offset)
+        N::convert_to_default::<M>(self, offset)
     }
 }
 
