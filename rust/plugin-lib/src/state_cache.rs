@@ -16,9 +16,9 @@
 
 use rand::{thread_rng, Rng};
 
+use crate::trace::trace_block;
 use xi_rope::interval::IntervalBounds;
 use xi_rope::{LinesMetric, RopeDelta};
-use crate::trace::trace_block;
 
 use super::{Cache, DataSource, Error, View};
 use crate::base_cache::ChunkCache;

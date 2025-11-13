@@ -32,11 +32,11 @@ use crate::rpc::{FindQuery, GestureType, MouseAction, SelectionGranularity, Sele
 use crate::selection::{Affinity, InsertDrift, SelRegion, Selection};
 use crate::styles::{Style, ThemeStyleMap};
 use crate::tabs::{BufferId, Counter, ViewId};
+use crate::trace::trace_block;
 use crate::width_cache::WidthCache;
 use crate::word_boundaries::WordCursor;
 use xi_rope::spans::Spans;
 use xi_rope::{Cursor, Interval, LinesMetric, Rope, RopeDelta};
-use crate::trace::trace_block;
 
 type StyleMap = RefCell<ThemeStyleMap>;
 

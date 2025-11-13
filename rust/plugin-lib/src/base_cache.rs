@@ -18,10 +18,10 @@
 
 use memchr::memchr;
 
+use crate::trace::trace_block;
 use crate::xi_core::plugin_rpc::{GetDataResponse, TextUnit};
 use xi_rope::interval::IntervalBounds;
 use xi_rope::{DeltaElement, Interval, LinesMetric, Rope, RopeDelta};
-use crate::trace::trace_block;
 
 use super::{Cache, DataSource, Error};
 

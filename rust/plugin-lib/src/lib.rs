@@ -32,8 +32,8 @@ mod base_cache;
 mod core_proxy;
 mod dispatch;
 mod state_cache;
-mod view;
 pub mod trace;
+mod view;
 
 use std::io;
 use std::path::Path;

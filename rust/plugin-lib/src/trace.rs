@@ -1,16 +1,7 @@
 #[cfg(feature = "trace")]
 pub use xi_trace::{
-    chrome_trace_dump,
-    disable_tracing,
-    enable_tracing,
-    is_enabled,
-    samples_cloned_unsorted,
-    trace,
-    trace_block,
-    trace_block_payload,
-    trace_payload,
-    Sample,
-    SampleGuard,
+    chrome_trace_dump, disable_tracing, enable_tracing, is_enabled, samples_cloned_unsorted, trace,
+    trace_block, trace_block_payload, trace_payload, Sample, SampleGuard,
 };
 
 #[cfg(not(feature = "trace"))]
@@ -37,7 +28,11 @@ mod shim {
         SampleGuard(PhantomData)
     }
 
-    pub fn trace_block_payload<'a, S, C, P>(_name: S, _categories: C, _payload: P) -> SampleGuard<'a> {
+    pub fn trace_block_payload<'a, S, C, P>(
+        _name: S,
+        _categories: C,
+        _payload: P,
+    ) -> SampleGuard<'a> {
         SampleGuard(PhantomData)
     }
 
@@ -83,15 +78,6 @@ mod shim {
 
 #[cfg(not(feature = "trace"))]
 pub use shim::{
-    chrome_trace_dump,
-    disable_tracing,
-    enable_tracing,
-    is_enabled,
-    samples_cloned_unsorted,
-    trace,
-    trace_block,
-    trace_block_payload,
-    trace_payload,
-    Sample,
-    SampleGuard,
+    chrome_trace_dump, disable_tracing, enable_tracing, is_enabled, samples_cloned_unsorted, trace,
+    trace_block, trace_block_payload, trace_payload, Sample, SampleGuard,
 };

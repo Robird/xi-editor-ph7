@@ -21,11 +21,15 @@ use std::borrow::Cow;
 use std::cmp::{max, min, Ordering};
 use std::fmt;
 use std::ops::Add;
-use std::str::{self, FromStr};
+use std::str::FromStr;
 use std::string::ParseError;
 
 use crate::delta::{Delta, DeltaElement};
 use crate::interval::{Interval, IntervalBounds};
+use crate::metrics::{
+    count_newlines_bytes, count_utf16_code_units_bytes, find_next_newline, find_prev_newline,
+    is_codepoint_boundary, is_newline_boundary, next_codepoint_boundary, prev_codepoint_boundary,
+};
 use crate::tree::{Cursor, DefaultMetricProvider, Leaf, Metric, Node, NodeInfo, TreeBuilder};
 
 use memchr::{memchr, memrchr};
@@ -177,42 +181,25 @@ impl Metric<RopeInfo, String> for BaseMetric {
     }
 
     fn to_base_units(s: &String, in_measured_units: usize) -> usize {
-        debug_assert!(s.is_char_boundary(in_measured_units));
+        debug_assert!(is_codepoint_boundary(s.as_bytes(), in_measured_units));
         in_measured_units
     }
 
     fn from_base_units(s: &String, in_base_units: usize) -> usize {
-        debug_assert!(s.is_char_boundary(in_base_units));
+        debug_assert!(is_codepoint_boundary(s.as_bytes(), in_base_units));
         in_base_units
     }
 
     fn is_boundary(s: &String, offset: usize) -> bool {
-        s.is_char_boundary(offset)
+        is_codepoint_boundary(s.as_bytes(), offset)
     }
 
     fn prev(s: &String, offset: usize) -> Option<usize> {
-        if offset == 0 {
-            // I think it's a precondition that this will never be called
-            // with offset == 0, but be defensive.
-            None
-        } else {
-            let mut len = 1;
-            while !s.is_char_boundary(offset - len) {
-                len += 1;
-            }
-            Some(offset - len)
-        }
+        prev_codepoint_boundary(s.as_bytes(), offset)
     }
 
     fn next(s: &String, offset: usize) -> Option<usize> {
-        if offset == s.len() {
-            // I think it's a precondition that this will never be called
-            // with offset == s.len(), but be defensive.
-            None
-        } else {
-            let b = s.as_bytes()[offset];
-            Some(offset + len_utf8_from_first_byte(b))
-        }
+        next_codepoint_boundary(s.as_bytes(), offset)
     }
 
     fn can_fragment() -> bool {
@@ -224,12 +211,7 @@ impl Metric<RopeInfo, String> for BaseMetric {
 /// bytes required to represent the codepoint.
 /// RFC reference : https://tools.ietf.org/html/rfc3629#section-4
 pub fn len_utf8_from_first_byte(b: u8) -> usize {
-    match b {
-        b if b < 0x80 => 1,
-        b if b < 0xe0 => 2,
-        b if b < 0xf0 => 3,
-        _ => 4,
-    }
+    crate::metrics::len_utf8_from_first_byte(b)
 }
 
 #[derive(Clone, Copy)]
@@ -245,36 +227,32 @@ impl Metric<RopeInfo, String> for LinesMetric {
     }
 
     fn is_boundary(s: &String, offset: usize) -> bool {
-        if offset == 0 {
-            // shouldn't be called with this, but be defensive
-            false
-        } else {
-            s.as_bytes()[offset - 1] == b'\n'
-        }
+        is_newline_boundary(s.as_bytes(), offset)
     }
 
     fn to_base_units(s: &String, in_measured_units: usize) -> usize {
         let mut offset = 0;
+        let bytes = s.as_bytes();
         for _ in 0..in_measured_units {
-            match memchr(b'\n', &s.as_bytes()[offset..]) {
-                Some(pos) => offset += pos + 1,
-                _ => panic!("to_base_units called with arg too large"),
+            match find_next_newline(bytes, offset) {
+                Some(next) => offset = next,
+                None => panic!("to_base_units called with arg too large"),
             }
         }
         offset
     }
 
     fn from_base_units(s: &String, in_base_units: usize) -> usize {
-        count_newlines(&s[..in_base_units])
+        count_newlines_bytes(&s.as_bytes()[..in_base_units])
     }
 
     fn prev(s: &String, offset: usize) -> Option<usize> {
         debug_assert!(offset > 0, "caller is responsible for validating input");
-        memrchr(b'\n', &s.as_bytes()[..offset - 1]).map(|pos| pos + 1)
+        find_prev_newline(s.as_bytes(), offset)
     }
 
     fn next(s: &String, offset: usize) -> Option<usize> {
-        memchr(b'\n', &s.as_bytes()[offset..]).map(|pos| offset + pos + 1)
+        find_next_newline(s.as_bytes(), offset)
     }
 
     fn can_fragment() -> bool {
@@ -292,49 +270,42 @@ impl Metric<RopeInfo, String> for Utf16CodeUnitsMetric {
     }
 
     fn is_boundary(s: &String, offset: usize) -> bool {
-        s.is_char_boundary(offset)
+        is_codepoint_boundary(s.as_bytes(), offset)
     }
 
     fn to_base_units(s: &String, in_measured_units: usize) -> usize {
-        let mut cur_len_utf16 = 0;
-        let mut cur_len_utf8 = 0;
-        for u in s.chars() {
-            if cur_len_utf16 >= in_measured_units {
-                break;
-            }
-            cur_len_utf16 += u.len_utf16();
-            cur_len_utf8 += u.len_utf8();
+        if in_measured_units == 0 {
+            return 0;
         }
-        cur_len_utf8
+
+        let bytes = s.as_bytes();
+        let mut offset = 0;
+        let mut seen_units = 0;
+
+        while offset < bytes.len() {
+            debug_assert!(is_codepoint_boundary(bytes, offset));
+            let next = next_codepoint_boundary(bytes, offset)
+                .expect("expected codepoint boundary within string bounds");
+            seen_units += count_utf16_code_units_bytes(&bytes[offset..next]);
+            offset = next;
+            if seen_units >= in_measured_units {
+                return offset;
+            }
+        }
+
+        bytes.len()
     }
 
     fn from_base_units(s: &String, in_base_units: usize) -> usize {
-        count_utf16_code_units(&s[..in_base_units])
+        count_utf16_code_units_bytes(&s.as_bytes()[..in_base_units])
     }
 
     fn prev(s: &String, offset: usize) -> Option<usize> {
-        if offset == 0 {
-            // I think it's a precondition that this will never be called
-            // with offset == 0, but be defensive.
-            None
-        } else {
-            let mut len = 1;
-            while !s.is_char_boundary(offset - len) {
-                len += 1;
-            }
-            Some(offset - len)
-        }
+        prev_codepoint_boundary(s.as_bytes(), offset)
     }
 
     fn next(s: &String, offset: usize) -> Option<usize> {
-        if offset == s.len() {
-            // I think it's a precondition that this will never be called
-            // with offset == s.len(), but be defensive.
-            None
-        } else {
-            let b = s.as_bytes()[offset];
-            Some(offset + len_utf8_from_first_byte(b))
-        }
+        next_codepoint_boundary(s.as_bytes(), offset)
     }
 
     fn can_fragment() -> bool {
@@ -345,20 +316,11 @@ impl Metric<RopeInfo, String> for Utf16CodeUnitsMetric {
 // Low level functions
 
 pub fn count_newlines(s: &str) -> usize {
-    bytecount::count(s.as_bytes(), b'\n')
+    count_newlines_bytes(s.as_bytes())
 }
 
 fn count_utf16_code_units(s: &str) -> usize {
-    let mut utf16_count = 0;
-    for &b in s.as_bytes() {
-        if (b as i8) >= -0x40 {
-            utf16_count += 1;
-        }
-        if b >= 0xf0 {
-            utf16_count += 1;
-        }
-    }
-    utf16_count
+    count_utf16_code_units_bytes(s.as_bytes())
 }
 
 fn find_leaf_split_for_bulk(s: &str) -> usize {

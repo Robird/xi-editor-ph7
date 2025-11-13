@@ -22,9 +22,9 @@ use std::time::{Duration, Instant};
 
 use serde_json::{self, Value};
 
+use crate::trace::trace_block;
 use xi_rope::{Cursor, Interval, LinesMetric, Rope, RopeDelta};
 use xi_rpc::{Error as RpcError, RemoteError};
-use crate::trace::trace_block;
 
 use crate::plugins::rpc::{
     ClientPluginInfo, Hover, PluginBufferInfo, PluginNotification, PluginRequest, PluginUpdate,

@@ -375,5 +375,4 @@ mod tests {
         assert_eq!(tester[1], 3);
         assert_eq!(tester[2], 4);
     }
-
 }

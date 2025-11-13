@@ -742,9 +742,9 @@ impl Trace {
         F: FnOnce() -> R,
     {
         // TODO: simplify this through the use of scopeguard crate
-    let start = now_ns();
+        let start = now_ns();
         let result = closure();
-    let end = now_ns();
+        let end = now_ns();
         if self.is_enabled() {
             self.record(Sample::new_duration(name, categories, None, start, end - start));
         }
@@ -765,9 +765,9 @@ impl Trace {
         F: FnOnce() -> R,
     {
         // TODO: simplify this through the use of scopeguard crate
-    let start = now_ns();
+        let start = now_ns();
         let result = closure();
-    let end = now_ns();
+        let end = now_ns();
         if self.is_enabled() {
             self.record(Sample::new_duration(
                 name,

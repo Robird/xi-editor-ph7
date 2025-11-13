@@ -1,11 +1,5 @@
 #[cfg(feature = "trace")]
-pub use xi_trace::{
-    trace,
-    trace_block,
-    trace_block_payload,
-    trace_payload,
-    SampleGuard,
-};
+pub use xi_trace::{trace, trace_block, trace_block_payload, trace_payload, SampleGuard};
 
 #[cfg(not(feature = "trace"))]
 mod shim {
@@ -26,10 +20,13 @@ mod shim {
         SampleGuard(PhantomData)
     }
 
-    pub fn trace_block_payload<'a, S, C, P>(_name: S, _categories: C, _payload: P) -> SampleGuard<'a> {
+    pub fn trace_block_payload<'a, S, C, P>(
+        _name: S,
+        _categories: C,
+        _payload: P,
+    ) -> SampleGuard<'a> {
         SampleGuard(PhantomData)
     }
-
 }
 
 #[cfg(not(feature = "trace"))]

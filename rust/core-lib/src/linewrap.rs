@@ -17,10 +17,10 @@
 use std::cmp::Ordering;
 use std::ops::Range;
 
+use crate::trace::trace_block;
 use xi_rope::breaks::{BreakBuilder, Breaks, BreaksInfo, BreaksLeaf, BreaksMetric};
 use xi_rope::spans::Spans;
 use xi_rope::{Cursor, Interval, LinesMetric, Rope, RopeDelta, RopeInfo};
-use crate::trace::trace_block;
 use xi_unicode::LineBreakLeafIter;
 
 use crate::client::Client;
@@ -28,8 +28,7 @@ use crate::styles::{Style, N_RESERVED_STYLES};
 use crate::width_cache::{CodepointMono, Token, WidthCache, WidthMeasure};
 
 /// The visual width of the buffer for the purpose of word wrapping.
-#[derive(Clone, Copy, Debug, PartialEq)]
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub(crate) enum WrapWidth {
     /// No wrapping in effect.
     #[default]
@@ -43,7 +42,6 @@ pub(crate) enum WrapWidth {
     /// Width in px units, requiring measurement by the front-end.
     Width(f64),
 }
-
 
 impl WrapWidth {
     fn differs_in_kind(self, other: WrapWidth) -> bool {

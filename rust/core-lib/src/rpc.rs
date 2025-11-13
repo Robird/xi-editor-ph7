@@ -357,7 +357,6 @@ pub enum SelectionModifier {
     AddRemovingCurrent,
 }
 
-
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct FindQuery {

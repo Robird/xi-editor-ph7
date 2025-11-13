@@ -31,9 +31,9 @@ use serde::de::{self, Deserialize, Deserializer, Unexpected};
 use serde::ser::{Serialize, Serializer};
 use serde_json::Value;
 
+use crate::trace::trace_block;
 use xi_rope::Rope;
 use xi_rpc::{self, ReadError, RemoteError, RpcCtx, RpcPeer};
-use crate::trace::trace_block;
 
 use crate::client::Client;
 use crate::config::{self, ConfigDomain, ConfigDomainExternal, ConfigManager, Table};

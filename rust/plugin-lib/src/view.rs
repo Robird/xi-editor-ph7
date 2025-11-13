@@ -16,6 +16,7 @@ use serde::Deserialize;
 use serde_json::{self, Value};
 use std::path::{Path, PathBuf};
 
+use crate::trace::trace_block;
 use crate::xi_core::plugin_rpc::{
     GetDataResponse, PluginBufferInfo, PluginEdit, ScopeSpan, TextUnit,
 };
@@ -24,7 +25,6 @@ use xi_core_lib::annotations::AnnotationType;
 use xi_core_lib::plugin_rpc::DataSpan;
 use xi_rope::interval::IntervalBounds;
 use xi_rope::RopeDelta;
-use crate::trace::trace_block;
 
 use xi_rpc::RpcPeer;
 

@@ -22,9 +22,9 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use syntect::highlighting::StyleModifier;
 use syntect::parsing::Scope;
 
+use crate::trace::trace_block;
 use xi_rope::spans::{Spans, SpansBuilder};
 use xi_rope::{Interval, RopeDelta};
-use crate::trace::trace_block;
 
 use crate::plugins::PluginPid;
 use crate::styles::{Style, ThemeStyleMap};

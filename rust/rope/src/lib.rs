@@ -45,6 +45,7 @@ pub mod diff;
 pub mod engine;
 pub mod find;
 pub mod interval;
+pub(crate) mod metrics;
 pub mod multiset;
 pub mod rope;
 #[cfg(feature = "serde")]

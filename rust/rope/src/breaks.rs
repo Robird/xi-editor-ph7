@@ -16,6 +16,10 @@
 //! storing the result of line breaking.
 
 use crate::interval::Interval;
+use crate::metrics::{
+    count_breaks_up_to, find_next_break, find_prev_break, is_break_boundary, nth_break_offset,
+    BreaksBaseMetric,
+};
 use crate::tree::{DefaultMetricProvider, Leaf, Metric, Node, NodeInfo, TreeBuilder};
 use std::cmp::min;
 use std::mem;
@@ -122,83 +126,23 @@ impl Metric<BreaksInfo, BreaksLeaf> for BreaksMetric {
     }
 
     fn to_base_units(l: &BreaksLeaf, in_measured_units: usize) -> usize {
-        if in_measured_units > l.data.len() {
-            l.len + 1
-        } else if in_measured_units == 0 {
-            0
-        } else {
-            l.data[in_measured_units - 1]
-        }
+        nth_break_offset(&l.data, l.len, in_measured_units)
     }
 
     fn from_base_units(l: &BreaksLeaf, in_base_units: usize) -> usize {
-        match l.data.binary_search(&in_base_units) {
-            Ok(n) => n + 1,
-            Err(n) => n,
-        }
+        count_breaks_up_to(&l.data, in_base_units)
     }
 
     fn is_boundary(l: &BreaksLeaf, offset: usize) -> bool {
-        l.data.binary_search(&offset).is_ok()
+        is_break_boundary(&l.data, offset)
     }
 
     fn prev(l: &BreaksLeaf, offset: usize) -> Option<usize> {
-        for i in 0..l.data.len() {
-            if offset <= l.data[i] {
-                if i == 0 {
-                    return None;
-                } else {
-                    return Some(l.data[i - 1]);
-                }
-            }
-        }
-        l.data.last().cloned()
+        find_prev_break(&l.data, offset)
     }
 
     fn next(l: &BreaksLeaf, offset: usize) -> Option<usize> {
-        let n = match l.data.binary_search(&offset) {
-            Ok(n) => n + 1,
-            Err(n) => n,
-        };
-
-        if n == l.data.len() {
-            None
-        } else {
-            Some(l.data[n])
-        }
-    }
-
-    fn can_fragment() -> bool {
-        true
-    }
-}
-
-#[derive(Copy, Clone)]
-pub struct BreaksBaseMetric(());
-
-impl Metric<BreaksInfo, BreaksLeaf> for BreaksBaseMetric {
-    fn measure(_: &BreaksInfo, len: usize) -> usize {
-        len
-    }
-
-    fn to_base_units(_: &BreaksLeaf, in_measured_units: usize) -> usize {
-        in_measured_units
-    }
-
-    fn from_base_units(_: &BreaksLeaf, in_base_units: usize) -> usize {
-        in_base_units
-    }
-
-    fn is_boundary(l: &BreaksLeaf, offset: usize) -> bool {
-        BreaksMetric::is_boundary(l, offset)
-    }
-
-    fn prev(l: &BreaksLeaf, offset: usize) -> Option<usize> {
-        BreaksMetric::prev(l, offset)
-    }
-
-    fn next(l: &BreaksLeaf, offset: usize) -> Option<usize> {
-        BreaksMetric::next(l, offset)
+        find_next_break(&l.data, offset)
     }
 
     fn can_fragment() -> bool {

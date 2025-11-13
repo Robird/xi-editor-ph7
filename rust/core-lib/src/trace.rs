@@ -1,14 +1,7 @@
 #[cfg(feature = "trace")]
 pub use xi_trace::{
-    chrome_trace_dump,
-    disable_tracing,
-    enable_tracing,
-    is_enabled,
-    samples_cloned_unsorted,
-    trace_block,
-    trace_payload,
-    Sample,
-    SampleGuard,
+    chrome_trace_dump, disable_tracing, enable_tracing, is_enabled, samples_cloned_unsorted,
+    trace_block, trace_payload, Sample, SampleGuard,
 };
 
 #[cfg(not(feature = "trace"))]
@@ -71,13 +64,6 @@ mod shim {
 
 #[cfg(not(feature = "trace"))]
 pub use shim::{
-    chrome_trace_dump,
-    disable_tracing,
-    enable_tracing,
-    is_enabled,
-    samples_cloned_unsorted,
-    trace_block,
-    trace_payload,
-    Sample,
-    SampleGuard,
+    chrome_trace_dump, disable_tracing, enable_tracing, is_enabled, samples_cloned_unsorted,
+    trace_block, trace_payload, Sample, SampleGuard,
 };

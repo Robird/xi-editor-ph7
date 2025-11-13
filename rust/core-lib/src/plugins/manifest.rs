@@ -225,7 +225,6 @@ impl PluginDescription {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
