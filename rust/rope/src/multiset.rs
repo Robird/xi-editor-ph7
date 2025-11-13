@@ -23,9 +23,6 @@ use std::fmt;
 use std::slice;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-#[cfg(feature = "serde")]
-#[allow(clippy::non_local_definitions)]
-#[derive(Serialize, Deserialize)]
 struct Segment {
     len: usize,
     count: usize,
@@ -38,9 +35,6 @@ struct Segment {
 ///
 /// Internally, this is stored as a list of "segments" with a length and a count.
 #[derive(Clone, PartialEq, Eq)]
-#[cfg(feature = "serde")]
-#[allow(clippy::non_local_definitions)]
-#[derive(Serialize, Deserialize)]
 pub struct Subset {
     /// Invariant, maintained by `SubsetBuilder`: all `Segment`s have non-zero
     /// length, and no `Segment` has the same count as the one before it.
@@ -319,6 +313,44 @@ impl Subset {
         }
     }
 
+    /// Returns an iterator over `(start, len, count)` triples that describe each
+    /// segment in document order. Intended for serialization and cross-crate interop
+    /// without exposing the internal `Segment` type.
+    #[cfg_attr(not(feature = "serde"), allow(dead_code))]
+    pub(crate) fn segment_triples(&self) -> SegmentTripleIter<'_> {
+        SegmentTripleIter { iter: self.segments.iter(), offset: 0 }
+    }
+
+    /// Rebuilds a `Subset` from a sequence of `(start, len, count)` triples.
+    /// Segments must be supplied in non-decreasing `start` order and represent
+    /// non-overlapping regions of the backing document. Gaps are interpreted as
+    /// zero-count segments.
+    #[cfg_attr(not(feature = "serde"), allow(dead_code))]
+    pub(crate) fn from_segment_triples<I>(triples: I) -> Subset
+    where
+        I: IntoIterator<Item = (usize, usize, usize)>,
+    {
+        let mut builder = SubsetBuilder::new();
+        let mut expected_start = 0usize;
+        for (start, len, count) in triples {
+            assert!(len > 0, "can't build subset segment with zero length");
+            assert!(start >= expected_start, "segments must be provided in order");
+            if start > expected_start {
+                builder.push_segment(start - expected_start, 0);
+            }
+            builder.push_segment(len, count);
+            expected_start = start + len;
+        }
+        builder.build()
+    }
+
+    /// Returns the number of segments currently stored. Primarily used by
+    /// serialization helpers when sizing output sequences.
+    #[cfg_attr(not(feature = "serde"), allow(dead_code))]
+    pub(crate) fn segment_count(&self) -> usize {
+        self.segments.len()
+    }
+
     /// Find the complement of this Subset. Every 0-count element will have a
     /// count of 1 and every non-zero element will have a count of 0.
     pub fn complement(&self) -> Subset {
@@ -342,6 +374,25 @@ impl Subset {
             cur_range: (0, 0), // will immediately try to consume next range
             subset_amount_consumed: 0,
         }
+    }
+}
+
+/// Iterator produced by `Subset::segment_triples()`.
+#[cfg_attr(not(feature = "serde"), allow(dead_code))]
+pub(crate) struct SegmentTripleIter<'a> {
+    iter: slice::Iter<'a, Segment>,
+    offset: usize,
+}
+
+impl<'a> Iterator for SegmentTripleIter<'a> {
+    type Item = (usize, usize, usize);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(|seg| {
+            let start = self.offset;
+            self.offset += seg.len;
+            (start, seg.len, seg.count)
+        })
     }
 }
 
@@ -450,6 +501,51 @@ impl<'a> Iterator for ZipIter<'a> {
                 self.consumed += len;
                 Some(ZipSegment { len, a_count, b_count })
             }
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+mod subset_serde {
+    use super::Subset;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Serialize, Deserialize)]
+    struct SegmentRepr {
+        len: usize,
+        count: usize,
+    }
+
+    #[derive(Serialize, Deserialize)]
+    struct SubsetRepr {
+        segments: Vec<SegmentRepr>,
+    }
+
+    impl Serialize for Subset {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            let mut segments = Vec::with_capacity(self.segment_count());
+            segments.extend(self.segment_triples().map(|(_, len, count)| SegmentRepr { len, count }));
+            let repr = SubsetRepr { segments };
+            repr.serialize(serializer)
+        }
+    }
+
+    impl<'de> Deserialize<'de> for Subset {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let repr = SubsetRepr::deserialize(deserializer)?;
+            let mut offset = 0usize;
+            let triples = repr.segments.into_iter().map(|seg| {
+                let start = offset;
+                offset += seg.len;
+                (start, seg.len, seg.count)
+            });
+            Ok(Subset::from_segment_triples(triples))
         }
     }
 }
@@ -648,6 +744,23 @@ mod tests {
             "01245689ABCDGJKLMPQSTWXYbcdfgjlmnosvy",
             "01245ABCDJLQSWXYgsv",
             "0123457ABCDEFHIJLNOQRSUVWXYZaeghikpqrstuvwxz",
+        );
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn subset_serialization_regression() {
+        let mut builder = SubsetBuilder::new();
+        builder.pad_to_len(2);
+        builder.add_range(2, 5, 3);
+        builder.add_range(6, 7, 1);
+        builder.pad_to_len(9);
+        let subset = builder.build();
+
+        let json = serde_json::to_string(&subset).expect("subset should serialize");
+        assert_eq!(
+            json,
+            r#"{"segments":[{"len":2,"count":0},{"len":3,"count":3},{"len":1,"count":0},{"len":1,"count":1},{"len":2,"count":0}]}"#
         );
     }
 }
