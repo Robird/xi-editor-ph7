@@ -30,7 +30,6 @@ extern crate regex;
 extern crate unicode_segmentation;
 
 #[cfg(feature = "serde")]
-#[macro_use]
 extern crate serde;
 
 #[cfg(test)]
@@ -42,7 +41,6 @@ pub mod breaks;
 pub mod compare;
 pub mod delta;
 pub mod diff;
-#[cfg(feature = "serde")]
 pub mod engine;
 pub mod find;
 pub mod interval;

@@ -39,15 +39,10 @@ use crate::rope::{Rope, RopeInfo};
 
 /// Represents the current state of a document and all of its history
 #[derive(Debug)]
-#[cfg(feature = "serde")]
-#[allow(clippy::non_local_definitions)]
-#[derive(Serialize, Deserialize)]
 pub struct Engine {
     /// The session ID used to create new `RevId`s for edits made on this device
-    #[cfg_attr(feature = "serde", serde(default = "default_session", skip_serializing))]
     session: SessionId,
     /// The incrementing revision number counter for this session used for `RevId`s
-    #[cfg_attr(feature = "serde", serde(default = "initial_revision_counter", skip_serializing))]
     rev_id_counter: u32,
     /// The current contents of the document as would be displayed on screen
     text: Rope,
@@ -78,9 +73,6 @@ pub struct Engine {
 // The advantage of using a session ID over random numbers is that it can be
 // easily delta-compressed later.
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
-#[cfg(feature = "serde")]
-#[allow(clippy::non_local_definitions)]
-#[derive(Serialize, Deserialize)]
 pub struct RevId {
     // 96 bits has a 10^(-12) chance of collision with 400 million sessions and 10^(-6) with 100 billion.
     // `session1==session2==0` is reserved for initialization which is the same on all sessions.
@@ -94,9 +86,6 @@ pub struct RevId {
 }
 
 #[derive(Debug)]
-#[cfg(feature = "serde")]
-#[allow(clippy::non_local_definitions)]
-#[derive(Serialize, Deserialize)]
 struct Revision {
     /// This uniquely represents the identity of this revision and it stays
     /// the same even if it is rebased or merged between devices.
@@ -135,9 +124,6 @@ struct FullPriority {
 use self::Contents::*;
 
 #[derive(Debug, Clone)]
-#[cfg(feature = "serde")]
-#[allow(clippy::non_local_definitions)]
-#[derive(Serialize, Deserialize)]
 enum Contents {
     Edit {
         /// Used to order concurrent inserts, for example auto-indentation
@@ -164,13 +150,88 @@ enum Contents {
     },
 }
 
+/// Lightweight read-only view over a revision, used by serde and future cross-language bindings.
+#[cfg_attr(not(feature = "serde"), allow(dead_code))]
+pub(crate) struct RevisionRef<'a> {
+    pub(crate) rev_id: RevId,
+    pub(crate) max_undo_so_far: usize,
+    pub(crate) contents: RevisionContentsRef<'a>,
+}
+
+/// Borrowed revision payload details exposed for serialization helpers.
+#[cfg_attr(not(feature = "serde"), allow(dead_code))]
+pub(crate) enum RevisionContentsRef<'a> {
+    Edit(EditContentsRef<'a>),
+    Undo(UndoContentsRef<'a>),
+}
+
+/// Borrowed view of an edit revision's contents.
+#[cfg_attr(not(feature = "serde"), allow(dead_code))]
+pub(crate) struct EditContentsRef<'a> {
+    pub(crate) priority: usize,
+    pub(crate) undo_group: usize,
+    pub(crate) inserts: &'a Subset,
+    pub(crate) deletes: &'a Subset,
+}
+
+/// Borrowed view of an undo revision's contents.
+#[cfg_attr(not(feature = "serde"), allow(dead_code))]
+pub(crate) struct UndoContentsRef<'a> {
+    pub(crate) toggled_groups: &'a BTreeSet<usize>,
+    pub(crate) deletes_bitxor: &'a Subset,
+}
+
+/// Owned revision payload produced during deserialization.
+#[cfg_attr(not(feature = "serde"), allow(dead_code))]
+pub(crate) struct RevisionOwned {
+    pub(crate) rev_id: RevId,
+    pub(crate) max_undo_so_far: usize,
+    pub(crate) contents: RevisionContentsOwned,
+}
+
+/// Owned representation of revision contents used to rebuild internal state.
+#[cfg_attr(not(feature = "serde"), allow(dead_code))]
+pub(crate) enum RevisionContentsOwned {
+    Edit(EditContentsOwned),
+    Undo(UndoContentsOwned),
+}
+
+/// Owned edit payload backing `RevisionContentsOwned::Edit`.
+#[cfg_attr(not(feature = "serde"), allow(dead_code))]
+pub(crate) struct EditContentsOwned {
+    pub(crate) priority: usize,
+    pub(crate) undo_group: usize,
+    pub(crate) inserts: Subset,
+    pub(crate) deletes: Subset,
+}
+
+/// Owned undo payload backing `RevisionContentsOwned::Undo`.
+#[cfg_attr(not(feature = "serde"), allow(dead_code))]
+pub(crate) struct UndoContentsOwned {
+    pub(crate) toggled_groups: BTreeSet<usize>,
+    pub(crate) deletes_bitxor: Subset,
+}
+
+/// Iterator over revisions that yields borrowed helper views for serialization.
+#[cfg_attr(not(feature = "serde"), allow(dead_code))]
+pub(crate) struct RevisionLogIter<'a> {
+    inner: std::slice::Iter<'a, Revision>,
+}
+
+impl<'a> Iterator for RevisionLogIter<'a> {
+    type Item = RevisionRef<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next().map(|rev| rev.as_ref())
+    }
+}
+
 /// for single user cases, used by serde and ::empty
 fn default_session() -> (u64, u32) {
     (1, 0)
 }
 
 /// Revision 0 is always an Undo of the empty set of groups
-#[cfg(feature = "serde")]
 fn initial_revision_counter() -> u32 {
     1
 }
@@ -189,6 +250,69 @@ impl RevId {
 
     pub fn session_id(&self) -> SessionId {
         (self.session1, self.session2)
+    }
+
+    #[cfg_attr(not(feature = "serde"), allow(dead_code))]
+    pub(crate) fn raw_parts(&self) -> (u64, u32, u32) {
+        (self.session1, self.session2, self.num)
+    }
+
+    #[cfg_attr(not(feature = "serde"), allow(dead_code))]
+    pub(crate) fn from_raw_parts(session1: u64, session2: u32, num: u32) -> RevId {
+        RevId { session1, session2, num }
+    }
+}
+
+impl Revision {
+    #[cfg_attr(not(feature = "serde"), allow(dead_code))]
+    pub(crate) fn as_ref(&self) -> RevisionRef<'_> {
+        RevisionRef {
+            rev_id: self.rev_id,
+            max_undo_so_far: self.max_undo_so_far,
+            contents: self.edit.as_ref(),
+        }
+    }
+
+    #[cfg_attr(not(feature = "serde"), allow(dead_code))]
+    pub(crate) fn from_owned(owned: RevisionOwned) -> Revision {
+        Revision {
+            rev_id: owned.rev_id,
+            max_undo_so_far: owned.max_undo_so_far,
+            edit: Contents::from_owned(owned.contents),
+        }
+    }
+}
+
+impl Contents {
+    #[cfg_attr(not(feature = "serde"), allow(dead_code))]
+    fn as_ref(&self) -> RevisionContentsRef<'_> {
+        match self {
+            Contents::Edit { priority, undo_group, inserts, deletes } => RevisionContentsRef::Edit(
+                EditContentsRef { priority: *priority, undo_group: *undo_group, inserts, deletes },
+            ),
+            Contents::Undo { toggled_groups, deletes_bitxor } => RevisionContentsRef::Undo(
+                UndoContentsRef { toggled_groups, deletes_bitxor },
+            ),
+        }
+    }
+
+    #[cfg_attr(not(feature = "serde"), allow(dead_code))]
+    fn from_owned(owned: RevisionContentsOwned) -> Contents {
+        match owned {
+            RevisionContentsOwned::Edit(EditContentsOwned { priority, undo_group, inserts, deletes }) => {
+                Contents::Edit { priority, undo_group, inserts, deletes }
+            }
+            RevisionContentsOwned::Undo(UndoContentsOwned { toggled_groups, deletes_bitxor }) => {
+                Contents::Undo { toggled_groups, deletes_bitxor }
+            }
+        }
+    }
+}
+
+impl RevisionOwned {
+    #[cfg_attr(not(feature = "serde"), allow(dead_code))]
+    pub(crate) fn new(rev_id: RevId, max_undo_so_far: usize, contents: RevisionContentsOwned) -> Self {
+        RevisionOwned { rev_id, max_undo_so_far, contents }
     }
 }
 
@@ -219,7 +343,7 @@ impl Engine {
         };
         Engine {
             session: default_session(),
-            rev_id_counter: 1,
+            rev_id_counter: initial_revision_counter(),
             text: Rope::default(),
             tombstones: Rope::default(),
             deletes_from_union,
@@ -711,6 +835,73 @@ impl Engine {
     }
 }
 
+impl Engine {
+    /// Exposes the session tuple used when generating new `RevId`s.
+    #[cfg_attr(not(feature = "serde"), allow(dead_code))]
+    pub(crate) fn session_components(&self) -> SessionId {
+        self.session
+    }
+
+    /// Current revision counter associated with this engine's session.
+    #[cfg_attr(not(feature = "serde"), allow(dead_code))]
+    pub(crate) fn revision_counter(&self) -> u32 {
+        self.rev_id_counter
+    }
+
+    /// Returns an iterator over revisions for serialization or diagnostics.
+    #[cfg_attr(not(feature = "serde"), allow(dead_code))]
+    pub(crate) fn revision_log(&self) -> RevisionLogIter<'_> {
+        RevisionLogIter { inner: self.revs.iter() }
+    }
+
+    /// Provides a borrowed view of the head text.
+    #[cfg_attr(not(feature = "serde"), allow(dead_code))]
+    pub(crate) fn text_snapshot(&self) -> &Rope {
+        &self.text
+    }
+
+    /// Provides a borrowed view of the tombstones rope.
+    #[cfg_attr(not(feature = "serde"), allow(dead_code))]
+    pub(crate) fn tombstones_snapshot(&self) -> &Rope {
+        &self.tombstones
+    }
+
+    /// Provides a borrowed view of the deletion subset from the union string.
+    #[cfg_attr(not(feature = "serde"), allow(dead_code))]
+    pub(crate) fn deletes_from_union_snapshot(&self) -> &Subset {
+        &self.deletes_from_union
+    }
+
+    /// Provides a borrowed view of undo group state.
+    #[cfg_attr(not(feature = "serde"), allow(dead_code))]
+    pub(crate) fn undone_groups_snapshot(&self) -> &BTreeSet<usize> {
+        &self.undone_groups
+    }
+
+    /// Recreates an engine from serialized components.
+    #[cfg_attr(not(feature = "serde"), allow(dead_code))]
+    pub(crate) fn from_serialized_state(
+        session: SessionId,
+        rev_id_counter: u32,
+        text: Rope,
+        tombstones: Rope,
+        deletes_from_union: Subset,
+        undone_groups: BTreeSet<usize>,
+        revs: Vec<RevisionOwned>,
+    ) -> Engine {
+        let revs = revs.into_iter().map(Revision::from_owned).collect();
+        Engine {
+            session,
+            rev_id_counter,
+            text,
+            tombstones,
+            deletes_from_union,
+            undone_groups,
+            revs,
+        }
+    }
+}
+
 // ======== Generic helpers
 
 /// Move sections from text to tombstones and out of tombstones based on a new and old set of deletions
@@ -968,6 +1159,9 @@ impl std::fmt::Debug for Error {
 
 impl std::error::Error for Error {}
 
+#[cfg(feature = "serde")]
+mod serde_impl;
+
 #[cfg(test)]
 #[rustfmt::skip]
 mod tests {
@@ -1006,6 +1200,27 @@ mod tests {
         let first_rev = engine.get_head_rev_id().token();
         engine.edit_rev(0, 1, first_rev, build_delta_1());
         assert_eq!("0123456789abcDEEFghijklmnopqr999stuvz", String::from(engine.get_head()));
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn engine_serialization_regression() {
+        let mut engine = Engine::new(Rope::from("Hi"));
+        let first_rev = engine.get_head_rev_id().token();
+        let greet_delta = Delta::simple_edit(Interval::new(2, 2), Rope::from(" there"), 2);
+        engine.edit_rev(1, 1, first_rev, greet_delta);
+
+        let second_rev = engine.get_head_rev_id().token();
+        let prefix_delta = Delta::simple_edit(Interval::new(0, 0), Rope::from("Well, "), engine.get_head().len());
+        engine.edit_rev(0, 2, second_rev, prefix_delta);
+
+        let mut undo_groups = BTreeSet::new();
+        undo_groups.insert(2);
+        engine.undo(undo_groups);
+
+        let json = serde_json::to_string(&engine).expect("serialize engine");
+        let expected = r#"{"text":"Hi there","tombstones":"Well, ","deletes_from_union":{"segments":[{"len":6,"count":1},{"len":8,"count":0}]},"undone_groups":[2],"revs":[{"rev_id":{"session1":0,"session2":0,"num":0},"max_undo_so_far":0,"edit":{"Undo":{"toggled_groups":[],"deletes_bitxor":{"segments":[]}}}},{"rev_id":{"session1":1,"session2":0,"num":1},"max_undo_so_far":0,"edit":{"Edit":{"priority":0,"undo_group":0,"inserts":{"segments":[{"len":2,"count":1}]},"deletes":{"segments":[{"len":2,"count":0}]}}}},{"rev_id":{"session1":1,"session2":0,"num":2},"max_undo_so_far":1,"edit":{"Edit":{"priority":1,"undo_group":1,"inserts":{"segments":[{"len":2,"count":0},{"len":6,"count":1}]},"deletes":{"segments":[{"len":8,"count":0}]}}}},{"rev_id":{"session1":1,"session2":0,"num":3},"max_undo_so_far":2,"edit":{"Edit":{"priority":0,"undo_group":2,"inserts":{"segments":[{"len":6,"count":1},{"len":8,"count":0}]},"deletes":{"segments":[{"len":14,"count":0}]}}}},{"rev_id":{"session1":1,"session2":0,"num":4},"max_undo_so_far":2,"edit":{"Undo":{"toggled_groups":[2],"deletes_bitxor":{"segments":[{"len":6,"count":1},{"len":8,"count":0}]}}}}]}"#;
+        assert_eq!(json, expected);
     }
 
     #[test]
