@@ -2,9 +2,9 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeSet;
 
 use super::{
-    default_session, initial_revision_counter, Contents, EditContentsOwned, EditContentsRef, Engine,
-    Revision, RevisionContentsOwned, RevisionContentsRef, RevisionOwned, RevisionRef, RevId,
-    SessionId, UndoContentsOwned, UndoContentsRef,
+    default_session, initial_revision_counter, Contents, EditContentsOwned, EditContentsRef,
+    Engine, RevId, Revision, RevisionContentsOwned, RevisionContentsRef, RevisionOwned,
+    RevisionRef, SessionId, UndoContentsOwned, UndoContentsRef,
 };
 use crate::multiset::Subset;
 use crate::rope::Rope;
@@ -61,16 +61,23 @@ enum RevisionContentsSerialize<'a> {
 impl<'a> From<RevisionRef<'a>> for RevisionSerialize<'a> {
     fn from(revision: RevisionRef<'a>) -> Self {
         let edit = RevisionContentsSerialize::from(revision.contents);
-        RevisionSerialize { rev_id: revision.rev_id, max_undo_so_far: revision.max_undo_so_far, edit }
+        RevisionSerialize {
+            rev_id: revision.rev_id,
+            max_undo_so_far: revision.max_undo_so_far,
+            edit,
+        }
     }
 }
 
 impl<'a> From<RevisionContentsRef<'a>> for RevisionContentsSerialize<'a> {
     fn from(contents: RevisionContentsRef<'a>) -> Self {
         match contents {
-            RevisionContentsRef::Edit(EditContentsRef { priority, undo_group, inserts, deletes }) => {
-                RevisionContentsSerialize::Edit { priority, undo_group, inserts, deletes }
-            }
+            RevisionContentsRef::Edit(EditContentsRef {
+                priority,
+                undo_group,
+                inserts,
+                deletes,
+            }) => RevisionContentsSerialize::Edit { priority, undo_group, inserts, deletes },
             RevisionContentsRef::Undo(UndoContentsRef { toggled_groups, deletes_bitxor }) => {
                 RevisionContentsSerialize::Undo { toggled_groups, deletes_bitxor }
             }
@@ -100,23 +107,20 @@ struct RevisionDeserialize {
 
 #[derive(Deserialize)]
 enum RevisionContentsDeserialize {
-    Edit {
-        priority: usize,
-        undo_group: usize,
-        inserts: Subset,
-        deletes: Subset,
-    },
-    Undo {
-        toggled_groups: BTreeSet<usize>,
-        deletes_bitxor: Subset,
-    },
+    Edit { priority: usize, undo_group: usize, inserts: Subset, deletes: Subset },
+    Undo { toggled_groups: BTreeSet<usize>, deletes_bitxor: Subset },
 }
 
 impl From<RevisionContentsDeserialize> for RevisionContentsOwned {
     fn from(contents: RevisionContentsDeserialize) -> Self {
         match contents {
             RevisionContentsDeserialize::Edit { priority, undo_group, inserts, deletes } => {
-                RevisionContentsOwned::Edit(EditContentsOwned { priority, undo_group, inserts, deletes })
+                RevisionContentsOwned::Edit(EditContentsOwned {
+                    priority,
+                    undo_group,
+                    inserts,
+                    deletes,
+                })
             }
             RevisionContentsDeserialize::Undo { toggled_groups, deletes_bitxor } => {
                 RevisionContentsOwned::Undo(UndoContentsOwned { toggled_groups, deletes_bitxor })

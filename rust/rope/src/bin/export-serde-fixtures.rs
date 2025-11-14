@@ -18,9 +18,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--dir" | "--output-dir" => {
-                let value = args.next().ok_or_else(|| {
-                    "--dir requires a value specifying the output directory"
-                })?;
+                let value = args
+                    .next()
+                    .ok_or_else(|| "--dir requires a value specifying the output directory")?;
                 output_dir = Some(PathBuf::from(value));
             }
             "--list" => {
@@ -61,7 +61,10 @@ fn list_fixtures() {
 }
 
 #[cfg(feature = "serde")]
-fn export_to_directory(dir: &std::path::Path, fixtures: &[Fixture]) -> Result<(), Box<dyn std::error::Error>> {
+fn export_to_directory(
+    dir: &std::path::Path,
+    fixtures: &[Fixture],
+) -> Result<(), Box<dyn std::error::Error>> {
     std::fs::create_dir_all(dir)?;
 
     for fixture in fixtures {

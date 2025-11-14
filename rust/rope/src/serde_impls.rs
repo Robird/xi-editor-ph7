@@ -131,8 +131,7 @@ impl<'de> Visitor<'de> for CopyRangeVisitor {
     {
         let start: usize =
             seq.next_element()?.ok_or_else(|| de::Error::invalid_length(0, &self))?;
-        let end: usize =
-            seq.next_element()?.ok_or_else(|| de::Error::invalid_length(1, &self))?;
+        let end: usize = seq.next_element()?.ok_or_else(|| de::Error::invalid_length(1, &self))?;
         Ok((start, end))
     }
 }

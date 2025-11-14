@@ -527,7 +527,8 @@ mod subset_serde {
             S: Serializer,
         {
             let mut segments = Vec::with_capacity(self.segment_count());
-            segments.extend(self.segment_triples().map(|(_, len, count)| SegmentRepr { len, count }));
+            segments
+                .extend(self.segment_triples().map(|(_, len, count)| SegmentRepr { len, count }));
             let repr = SubsetRepr { segments };
             repr.serialize(serializer)
         }

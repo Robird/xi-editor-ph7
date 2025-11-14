@@ -26,8 +26,7 @@ use std::string::ParseError;
 
 use crate::delta::{Delta, DeltaElement};
 use crate::helpers::string_leaf::{
-    count_utf16_code_units, find_leaf_split_for_bulk, find_leaf_split_for_merge, MAX_LEAF,
-    MIN_LEAF,
+    count_utf16_code_units, find_leaf_split_for_bulk, find_leaf_split_for_merge, MAX_LEAF, MIN_LEAF,
 };
 use crate::interval::{Interval, IntervalBounds};
 use crate::metrics::{
@@ -319,7 +318,6 @@ impl Metric<RopeInfo, String> for Utf16CodeUnitsMetric {
 pub fn count_newlines(s: &str) -> usize {
     count_newlines_bytes(s.as_bytes())
 }
-
 
 // Additional APIs custom to strings
 

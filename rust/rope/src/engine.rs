@@ -287,21 +287,29 @@ impl Contents {
     #[cfg_attr(not(feature = "serde"), allow(dead_code))]
     fn as_ref(&self) -> RevisionContentsRef<'_> {
         match self {
-            Contents::Edit { priority, undo_group, inserts, deletes } => RevisionContentsRef::Edit(
-                EditContentsRef { priority: *priority, undo_group: *undo_group, inserts, deletes },
-            ),
-            Contents::Undo { toggled_groups, deletes_bitxor } => RevisionContentsRef::Undo(
-                UndoContentsRef { toggled_groups, deletes_bitxor },
-            ),
+            Contents::Edit { priority, undo_group, inserts, deletes } => {
+                RevisionContentsRef::Edit(EditContentsRef {
+                    priority: *priority,
+                    undo_group: *undo_group,
+                    inserts,
+                    deletes,
+                })
+            }
+            Contents::Undo { toggled_groups, deletes_bitxor } => {
+                RevisionContentsRef::Undo(UndoContentsRef { toggled_groups, deletes_bitxor })
+            }
         }
     }
 
     #[cfg_attr(not(feature = "serde"), allow(dead_code))]
     fn from_owned(owned: RevisionContentsOwned) -> Contents {
         match owned {
-            RevisionContentsOwned::Edit(EditContentsOwned { priority, undo_group, inserts, deletes }) => {
-                Contents::Edit { priority, undo_group, inserts, deletes }
-            }
+            RevisionContentsOwned::Edit(EditContentsOwned {
+                priority,
+                undo_group,
+                inserts,
+                deletes,
+            }) => Contents::Edit { priority, undo_group, inserts, deletes },
             RevisionContentsOwned::Undo(UndoContentsOwned { toggled_groups, deletes_bitxor }) => {
                 Contents::Undo { toggled_groups, deletes_bitxor }
             }
@@ -311,7 +319,11 @@ impl Contents {
 
 impl RevisionOwned {
     #[cfg_attr(not(feature = "serde"), allow(dead_code))]
-    pub(crate) fn new(rev_id: RevId, max_undo_so_far: usize, contents: RevisionContentsOwned) -> Self {
+    pub(crate) fn new(
+        rev_id: RevId,
+        max_undo_so_far: usize,
+        contents: RevisionContentsOwned,
+    ) -> Self {
         RevisionOwned { rev_id, max_undo_so_far, contents }
     }
 }

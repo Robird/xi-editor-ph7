@@ -19,6 +19,8 @@ use std::marker::PhantomData;
 use std::ops::Range;
 use std::sync::Arc;
 
+use smallvec::SmallVec;
+
 use crate::interval::{Interval, IntervalBounds};
 
 const MIN_CHILDREN: usize = 4;
@@ -775,6 +777,105 @@ impl<N: NodeInfo<L>, L: Leaf> TreeBuilder<N, L> {
 
 const CURSOR_CACHE_SIZE: usize = 4;
 
+/// A cached frame representing the relationship between a parent node and the
+/// child traversed by the cursor when descending the tree.
+///
+/// Frames are stored from root to leaf and keep enough information to rebuild
+/// cached offsets without walking sibling lengths again.
+pub struct PathFrame<N: NodeInfo<L>, L: Leaf> {
+    node: Arc<NodeBody<N, L>>,
+    child_index: usize,
+    child_offset: usize,
+}
+
+impl<N: NodeInfo<L>, L: Leaf> PathFrame<N, L> {
+    fn new(node: &Node<N, L>, child_index: usize, child_offset: usize) -> Self {
+        PathFrame { node: clone_node_arc(node), child_index, child_offset }
+    }
+
+    pub fn ptr_eq(&self, other: &Node<N, L>) -> bool {
+        Arc::ptr_eq(&self.node, other.shared.arc())
+    }
+
+    pub fn child_index(&self) -> usize {
+        self.child_index
+    }
+
+    pub fn child_offset(&self) -> usize {
+        self.child_offset
+    }
+}
+
+/// A borrow-free snapshot of a cursor's cached state.
+///
+/// The descriptor can be used to rebuild a [`Cursor`] at the same position, as
+/// long as the underlying nodes are still valid (checked with `Arc::ptr_eq`).
+pub struct CursorDescriptor<N: NodeInfo<L>, L: Leaf> {
+    position: usize,
+    offset_of_leaf: usize,
+    leaf: Option<Arc<NodeBody<N, L>>>,
+    frames: SmallVec<[PathFrame<N, L>; CURSOR_CACHE_SIZE]>,
+}
+
+impl<N: NodeInfo<L>, L: Leaf> CursorDescriptor<N, L> {
+    fn new_invalid(position: usize) -> Self {
+        CursorDescriptor { position, offset_of_leaf: 0, leaf: None, frames: SmallVec::new() }
+    }
+
+    fn new(
+        position: usize,
+        offset_of_leaf: usize,
+        leaf: Arc<NodeBody<N, L>>,
+        frames: SmallVec<[PathFrame<N, L>; CURSOR_CACHE_SIZE]>,
+    ) -> Self {
+        CursorDescriptor { position, offset_of_leaf, leaf: Some(leaf), frames }
+    }
+
+    /// Returns the cached depth (number of parent frames) stored in the descriptor.
+    pub fn depth(&self) -> usize {
+        self.frames.len()
+    }
+
+    /// Returns whether the descriptor holds a valid leaf reference.
+    pub fn is_valid(&self) -> bool {
+        self.leaf.is_some()
+    }
+
+    /// Returns the absolute cursor position captured by this descriptor.
+    pub fn position(&self) -> usize {
+        self.position
+    }
+
+    /// Returns the absolute offset of the current leaf within the tree.
+    pub fn offset_of_leaf(&self) -> usize {
+        self.offset_of_leaf
+    }
+
+    /// Returns the frames describing the cached path from root to leaf.
+    pub fn frames(&self) -> &[PathFrame<N, L>] {
+        &self.frames
+    }
+
+    /// Restores a [`Cursor`] from this descriptor if the cached nodes still belong to `root`.
+    pub fn restore<'a>(&self, root: &'a Node<N, L>) -> Option<Cursor<'a, N, L>> {
+        if !self.is_valid() {
+            return None;
+        }
+        let mut cursor = Cursor {
+            root,
+            position: self.position,
+            cache: [None; CURSOR_CACHE_SIZE],
+            leaf: None,
+            offset_of_leaf: 0,
+        };
+        if cursor.apply_descriptor(self) {
+            Some(cursor)
+        } else {
+            None
+        }
+    }
+}
+
 /// A data structure for traversing boundaries in a tree.
 ///
 /// It is designed to be efficient both for random access and for iteration. The
@@ -863,6 +964,91 @@ impl<'a, N: NodeInfo<L>, L: Leaf> Cursor<'a, N, L> {
     /// Get the position of the cursor.
     pub fn pos(&self) -> usize {
         self.position
+    }
+
+    /// Creates a [`CursorDescriptor`] snapshot of the current cursor state.
+    ///
+    /// The descriptor owns all cached path information, allowing the cursor to
+    /// be reconstructed later without holding borrows into the tree. When the
+    /// cursor is invalid, the returned descriptor will also be marked invalid
+    /// and `restore`/`apply_descriptor` will return failure.
+    pub fn to_descriptor(&self) -> CursorDescriptor<N, L> {
+        if self.leaf.is_none() {
+            return CursorDescriptor::new_invalid(self.position);
+        }
+        let (frames, leaf_arc, offset_of_leaf, offset_in_leaf) =
+            build_descriptor_components(self.root, self.position);
+        debug_assert_eq!(offset_of_leaf, self.offset_of_leaf);
+        debug_assert_eq!(offset_in_leaf, self.position - self.offset_of_leaf);
+        CursorDescriptor::new(self.position, offset_of_leaf, leaf_arc, frames)
+    }
+
+    /// Attempts to repopulate the cursor's cache from a descriptor.
+    ///
+    /// Returns `true` if the descriptor was still valid for the current tree and
+    /// the cursor was updated. On failure the cursor is left unchanged so the
+    /// caller can fall back to a fresh descent.
+    pub fn apply_descriptor(&mut self, descriptor: &CursorDescriptor<N, L>) -> bool {
+        if !descriptor.is_valid() {
+            return false;
+        }
+        if descriptor.position > self.root.len() {
+            return false;
+        }
+        if descriptor.offset_of_leaf > descriptor.position {
+            return false;
+        }
+
+        let mut node = self.root;
+        let mut nodes_for_cache: SmallVec<[&Node<N, L>; CURSOR_CACHE_SIZE]> = SmallVec::new();
+        let mut accumulated_offset = 0usize;
+
+        for frame in descriptor.frames.iter() {
+            if !frame.ptr_eq(node) {
+                return false;
+            }
+            let children = node.get_children();
+            let child_index = frame.child_index();
+            if child_index >= children.len() {
+                return false;
+            }
+            let computed_offset: usize = children.iter().take(child_index).map(Node::len).sum();
+            if computed_offset != frame.child_offset() {
+                return false;
+            }
+            accumulated_offset += frame.child_offset();
+            nodes_for_cache.push(node);
+            node = &children[child_index];
+        }
+
+        let leaf_arc = descriptor.leaf.as_ref().unwrap();
+        if !Arc::ptr_eq(leaf_arc, node.shared.arc()) {
+            return false;
+        }
+
+        if accumulated_offset != descriptor.offset_of_leaf {
+            return false;
+        }
+        let offset_in_leaf = descriptor.position - descriptor.offset_of_leaf;
+        if offset_in_leaf > node.len() {
+            return false;
+        }
+
+        let mut new_cache: [Option<(&Node<N, L>, usize)>; CURSOR_CACHE_SIZE] =
+            [None; CURSOR_CACHE_SIZE];
+        for (slot, (parent, frame)) in
+            nodes_for_cache.iter().rev().zip(descriptor.frames.iter().rev()).enumerate()
+        {
+            if slot >= CURSOR_CACHE_SIZE {
+                break;
+            }
+            new_cache[slot] = Some((*parent, frame.child_index()));
+        }
+
+        self.position = descriptor.position;
+        self.cache = new_cache;
+        self.set_leaf_from_node(node, descriptor.offset_of_leaf);
+        true
     }
 
     /// Determine whether the current position is a boundary.
@@ -1129,8 +1315,7 @@ impl<'a, N: NodeInfo<L>, L: Leaf> Cursor<'a, N, L> {
             }
             node = &children[i];
         }
-        self.leaf = Some(node.get_leaf());
-        self.offset_of_leaf = offset;
+        self.set_leaf_from_node(node, offset);
     }
 
     /// Returns the measure at the beginning of the leaf containing `pos`.
@@ -1186,8 +1371,12 @@ impl<'a, N: NodeInfo<L>, L: Leaf> Cursor<'a, N, L> {
             }
             node = &children[i];
         }
-        self.leaf = Some(node.get_leaf());
+        self.set_leaf_from_node(node, offset);
         self.position = offset;
+    }
+    #[inline]
+    fn set_leaf_from_node(&mut self, leaf_node: &'a Node<N, L>, offset: usize) {
+        self.leaf = Some(leaf_node.get_leaf());
         self.offset_of_leaf = offset;
     }
 }
@@ -1226,6 +1415,41 @@ where
     pub fn pos(&self) -> usize {
         self.cursor.pos()
     }
+}
+
+fn build_descriptor_components<N: NodeInfo<L>, L: Leaf>(
+    root: &Node<N, L>,
+    position: usize,
+) -> (SmallVec<[PathFrame<N, L>; CURSOR_CACHE_SIZE]>, Arc<NodeBody<N, L>>, usize, usize) {
+    let mut frames: SmallVec<[PathFrame<N, L>; CURSOR_CACHE_SIZE]> = SmallVec::new();
+    let mut node = root;
+    let clamped_position = position.min(root.len());
+    let mut remaining = clamped_position;
+
+    while node.height() > 0 {
+        let children = node.get_children();
+        let mut child_index = 0;
+        let mut child_offset = 0;
+        for (idx, child) in children.iter().enumerate() {
+            let len = child.len();
+            if remaining < len || idx + 1 == children.len() {
+                child_index = idx;
+                break;
+            }
+            remaining -= len;
+            child_offset += len;
+        }
+        frames.push(PathFrame::new(node, child_index, child_offset));
+        node = &children[child_index];
+    }
+
+    let leaf_arc = clone_node_arc(node);
+    let offset_of_leaf = clamped_position - remaining;
+    (frames, leaf_arc, offset_of_leaf, remaining)
+}
+
+fn clone_node_arc<N: NodeInfo<L>, L: Leaf>(node: &Node<N, L>) -> Arc<NodeBody<N, L>> {
+    Arc::clone(node.shared.arc())
 }
 
 #[cfg(test)]
