@@ -18,13 +18,17 @@
 #![allow(clippy::needless_return)]
 
 use std::borrow::Cow;
-use std::cmp::{max, min, Ordering};
+use std::cmp::{min, Ordering};
 use std::fmt;
 use std::ops::Add;
 use std::str::FromStr;
 use std::string::ParseError;
 
 use crate::delta::{Delta, DeltaElement};
+use crate::helpers::string_leaf::{
+    count_utf16_code_units, find_leaf_split_for_bulk, find_leaf_split_for_merge, MAX_LEAF,
+    MIN_LEAF,
+};
 use crate::interval::{Interval, IntervalBounds};
 use crate::metrics::{
     count_newlines_bytes, count_utf16_code_units_bytes, find_next_newline, find_prev_newline,
@@ -32,11 +36,8 @@ use crate::metrics::{
 };
 use crate::tree::{Cursor, DefaultMetricProvider, Leaf, Metric, Node, NodeInfo, TreeBuilder};
 
-use memchr::{memchr, memrchr};
+use memchr::memchr;
 use unicode_segmentation::{GraphemeCursor, GraphemeIncomplete};
-
-const MIN_LEAF: usize = 511;
-const MAX_LEAF: usize = 1024;
 
 /// A rope data structure.
 ///
@@ -319,31 +320,6 @@ pub fn count_newlines(s: &str) -> usize {
     count_newlines_bytes(s.as_bytes())
 }
 
-fn count_utf16_code_units(s: &str) -> usize {
-    count_utf16_code_units_bytes(s.as_bytes())
-}
-
-fn find_leaf_split_for_bulk(s: &str) -> usize {
-    find_leaf_split(s, MIN_LEAF)
-}
-
-fn find_leaf_split_for_merge(s: &str) -> usize {
-    find_leaf_split(s, max(MIN_LEAF, s.len() - MAX_LEAF))
-}
-
-// Try to split at newline boundary (leaning left), if not, then split at codepoint
-fn find_leaf_split(s: &str, minsplit: usize) -> usize {
-    let mut splitpoint = min(MAX_LEAF, s.len() - MIN_LEAF);
-    match memrchr(b'\n', &s.as_bytes()[minsplit - 1..splitpoint]) {
-        Some(pos) => minsplit + pos,
-        None => {
-            while !s.is_char_boundary(splitpoint) {
-                splitpoint -= 1;
-            }
-            splitpoint
-        }
-    }
-}
 
 // Additional APIs custom to strings
 
