@@ -46,6 +46,18 @@ if ! (cargo test --all); then
     exit $?
 fi
 
+printf 'Running "cargo test -p xi-rope --no-default-features"\n'
+
+if ! (cargo test -p xi-rope --no-default-features); then
+    exit $?
+fi
+
+printf 'Running "cargo test -p xi-rope --features serde"\n'
+
+if ! (cargo test -p xi-rope --features serde); then
+    exit $?
+fi
+
 printf 'Tests passed!\n'
 printf 'Benchmarks are disabled in xi-editor-ph7; skipping cargo bench.\n'
 printf 'Workspace limited to core crates (xi-core, xi-core-lib, xi-plugin-lib, xi-rope, xi-rpc, xi-trace, xi-unicode).\n'

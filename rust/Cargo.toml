@@ -29,6 +29,7 @@ default-features = false
 default = ["trace", "watch"]
 trace = ["xi-core-lib/trace", "xi-rpc/trace"]
 watch = ["xi-core-lib/notify"]
+serde = ["xi-core-lib/serde"]
 
 [workspace]
 members = [
