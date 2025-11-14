@@ -987,6 +987,7 @@ mod serde_tests {
 
     #[test]
     fn delta_serialization_regression() {
+        use crate::serde_fixtures::DELTA_FIXTURE;
         let delta = Delta::from_element_tuples(
             TEST_STR.len(),
             vec![
@@ -999,10 +1000,7 @@ mod serde_tests {
         );
 
         let json = serde_json::to_string(&delta).expect("serialize failed");
-        assert_eq!(
-            json,
-            r#"{"els":[{"copy":[0,3]},{"insert":"[ins]"},{"copy":[8,10]},{"insert":"!"},{"copy":[15,62]}],"base_len":62}"#
-        );
+        assert_eq!(json, DELTA_FIXTURE.json);
 
         let de: Delta<RopeInfo, String> = serde_json::from_str(&json).expect("deserialize failed");
         assert_eq!(delta.apply_to_string(TEST_STR), de.apply_to_string(TEST_STR));

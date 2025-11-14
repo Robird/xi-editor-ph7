@@ -1205,6 +1205,7 @@ mod tests {
     #[cfg(feature = "serde")]
     #[test]
     fn engine_serialization_regression() {
+        use crate::serde_fixtures::ENGINE_FIXTURE;
         let mut engine = Engine::new(Rope::from("Hi"));
         let first_rev = engine.get_head_rev_id().token();
         let greet_delta = Delta::simple_edit(Interval::new(2, 2), Rope::from(" there"), 2);
@@ -1219,8 +1220,7 @@ mod tests {
         engine.undo(undo_groups);
 
         let json = serde_json::to_string(&engine).expect("serialize engine");
-        let expected = r#"{"text":"Hi there","tombstones":"Well, ","deletes_from_union":{"segments":[{"len":6,"count":1},{"len":8,"count":0}]},"undone_groups":[2],"revs":[{"rev_id":{"session1":0,"session2":0,"num":0},"max_undo_so_far":0,"edit":{"Undo":{"toggled_groups":[],"deletes_bitxor":{"segments":[]}}}},{"rev_id":{"session1":1,"session2":0,"num":1},"max_undo_so_far":0,"edit":{"Edit":{"priority":0,"undo_group":0,"inserts":{"segments":[{"len":2,"count":1}]},"deletes":{"segments":[{"len":2,"count":0}]}}}},{"rev_id":{"session1":1,"session2":0,"num":2},"max_undo_so_far":1,"edit":{"Edit":{"priority":1,"undo_group":1,"inserts":{"segments":[{"len":2,"count":0},{"len":6,"count":1}]},"deletes":{"segments":[{"len":8,"count":0}]}}}},{"rev_id":{"session1":1,"session2":0,"num":3},"max_undo_so_far":2,"edit":{"Edit":{"priority":0,"undo_group":2,"inserts":{"segments":[{"len":6,"count":1},{"len":8,"count":0}]},"deletes":{"segments":[{"len":14,"count":0}]}}}},{"rev_id":{"session1":1,"session2":0,"num":4},"max_undo_so_far":2,"edit":{"Undo":{"toggled_groups":[2],"deletes_bitxor":{"segments":[{"len":6,"count":1},{"len":8,"count":0}]}}}}]}"#;
-        assert_eq!(json, expected);
+        assert_eq!(json, ENGINE_FIXTURE.json);
     }
 
     #[test]

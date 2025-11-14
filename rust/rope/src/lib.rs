@@ -48,6 +48,8 @@ pub(crate) mod metrics;
 pub mod multiset;
 pub mod rope;
 #[cfg(feature = "serde")]
+pub mod serde_fixtures;
+#[cfg(feature = "serde")]
 mod serde_impls;
 pub mod spans;
 #[cfg(test)]

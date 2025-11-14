@@ -750,6 +750,8 @@ mod tests {
     #[cfg(feature = "serde")]
     #[test]
     fn subset_serialization_regression() {
+        use crate::serde_fixtures::SUBSET_FIXTURE;
+
         let mut builder = SubsetBuilder::new();
         builder.pad_to_len(2);
         builder.add_range(2, 5, 3);
@@ -758,9 +760,6 @@ mod tests {
         let subset = builder.build();
 
         let json = serde_json::to_string(&subset).expect("subset should serialize");
-        assert_eq!(
-            json,
-            r#"{"segments":[{"len":2,"count":0},{"len":3,"count":3},{"len":1,"count":0},{"len":1,"count":1},{"len":2,"count":0}]}"#
-        );
+        assert_eq!(json, SUBSET_FIXTURE.json);
     }
 }
