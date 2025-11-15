@@ -14,7 +14,10 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use serde::Serialize;
 
 #[cfg(feature = "serde")]
-use xi_rope::serde_fixtures::{export_cursor_descriptor_fixtures, fixtures, Fixture};
+use xi_rope::serde_fixtures::{
+    export_chunk_descriptors, export_cursor_descriptor_fixtures, export_grapheme_descriptors,
+    fixtures, ChunkDescriptorExportReport, Fixture, GraphemeDescriptorExportReport,
+};
 
 #[cfg(all(feature = "serde", feature = "tree_builder_slice_trace"))]
 use xi_rope::{
@@ -28,6 +31,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut output_dir: Option<PathBuf> = None;
     let mut trace_dir: Option<PathBuf> = None;
     let mut cursor_dir: Option<PathBuf> = None;
+    let mut chunk_dir: Option<PathBuf> = None;
+    let mut grapheme_dir: Option<PathBuf> = None;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -49,6 +54,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 })?;
                 cursor_dir = Some(PathBuf::from(value));
             }
+            "--chunk-descriptors" => {
+                let value = args.next().ok_or_else(|| {
+                    "--chunk-descriptors requires a value specifying the output directory"
+                })?;
+                chunk_dir = Some(PathBuf::from(value));
+            }
+            "--grapheme-descriptors" => {
+                let value = args.next().ok_or_else(|| {
+                    "--grapheme-descriptors requires a value specifying the output directory"
+                })?;
+                grapheme_dir = Some(PathBuf::from(value));
+            }
             "--list" => {
                 list_fixtures();
                 return Ok(());
@@ -63,10 +80,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    if output_dir.is_none() && trace_dir.is_none() && cursor_dir.is_none() {
+    if output_dir.is_none()
+        && trace_dir.is_none()
+        && cursor_dir.is_none()
+        && chunk_dir.is_none()
+        && grapheme_dir.is_none()
+    {
         print_usage();
         return Err(
-            "missing required --dir <PATH>, --tree-builder-trace <PATH>, or --cursor-descriptors <PATH> argument"
+            "missing required --dir <PATH>, --tree-builder-trace <PATH>, --cursor-descriptors <PATH>, --chunk-descriptors <PATH>, or --grapheme-descriptors <PATH> argument"
                 .into(),
         );
     }
@@ -88,13 +110,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
+    if let Some(dir) = chunk_dir {
+        let report = export_chunk_descriptors(dir.as_path())?;
+        report_chunk_export(&report);
+    }
+
+    if let Some(dir) = grapheme_dir {
+        let report = export_grapheme_descriptors(dir.as_path())?;
+        report_grapheme_export(&report);
+    }
+
     Ok(())
 }
 
 #[cfg(feature = "serde")]
 fn print_usage() {
     eprintln!(
-        "Usage: cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --dir <PATH> [--tree-builder-trace <PATH>] [--cursor-descriptors <PATH>]\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --tree-builder-trace <PATH>\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --cursor-descriptors <PATH>\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --list"
+        "Usage: cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --dir <PATH> [--tree-builder-trace <PATH>] [--cursor-descriptors <PATH>] [--chunk-descriptors <PATH>] [--grapheme-descriptors <PATH>]\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --tree-builder-trace <PATH>\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --cursor-descriptors <PATH>\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --chunk-descriptors <PATH>\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --grapheme-descriptors <PATH>\n        cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --list"
     );
 }
 
@@ -127,6 +159,25 @@ fn export_to_directory(
 #[cfg(all(feature = "serde", feature = "tree_builder_slice_trace"))]
 fn handle_tree_builder_trace(dir: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     export_tree_builder_trace(dir.as_path())
+}
+
+#[cfg(feature = "serde")]
+fn report_chunk_export(report: &ChunkDescriptorExportReport) {
+    println!(
+        "exported {chunk_count} chunk descriptors and {line_count} line descriptors to {path}",
+        chunk_count = report.chunk_count,
+        line_count = report.line_count,
+        path = report.file_path.display()
+    );
+}
+
+#[cfg(feature = "serde")]
+fn report_grapheme_export(report: &GraphemeDescriptorExportReport) {
+    println!(
+        "exported {count} grapheme descriptors to {path}",
+        count = report.descriptor_count,
+        path = report.file_path.display()
+    );
 }
 
 #[cfg(all(feature = "serde", not(feature = "tree_builder_slice_trace")))]

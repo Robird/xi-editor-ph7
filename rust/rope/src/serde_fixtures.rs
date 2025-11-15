@@ -5,12 +5,25 @@
 
 #![cfg(feature = "serde")]
 
+pub mod chunk_descriptors;
 pub mod cursor_descriptors;
+pub mod grapheme_descriptors;
 
 pub use cursor_descriptors::{
     cursor_descriptor_samples, export_cursor_descriptor_fixtures, CursorDescriptorExportReport,
     CursorDescriptorFixture, CursorDescriptorFrame, CursorDescriptorOffsets, DescriptorMetric,
     CURSOR_DESCRIPTOR_FILENAME,
+};
+
+pub use chunk_descriptors::{
+    chunk_descriptor_fixtures, export_chunk_descriptors, ChunkDescriptor,
+    ChunkDescriptorExportReport, ChunkDescriptorFile, LineDescriptor, RangeSnapshot,
+    CHUNK_DESCRIPTOR_FILENAME,
+};
+
+pub use grapheme_descriptors::{
+    export_grapheme_descriptors, grapheme_descriptor_fixtures, GraphemeDescriptor,
+    GraphemeDescriptorExportReport, GraphemeDescriptorFile, GRAPHEME_DESCRIPTOR_FILENAME,
 };
 
 /// Describes a single serde regression fixture.
@@ -53,4 +66,21 @@ pub fn get_fixture(name: &str) -> Option<&'static Fixture> {
         i += 1;
     }
     None
+}
+
+pub(crate) fn detect_git_commit() -> Option<String> {
+    use std::process::Command;
+
+    let output = Command::new("git").args(["rev-parse", "HEAD"]).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let hash = String::from_utf8(output.stdout).ok()?;
+    let trimmed = hash.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
 }
