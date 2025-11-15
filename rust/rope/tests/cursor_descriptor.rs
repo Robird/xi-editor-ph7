@@ -103,7 +103,190 @@ fn cursor_descriptor_rejects_invalid_snapshot() {
 #[cfg(feature = "cursor_state")]
 mod cursor_state_tests {
     use super::*;
-    use xi_rope::tree::CursorState;
+    use std::any::type_name;
+
+    use xi_rope::rope::{BaseMetric, Utf16CodeUnitsMetric};
+    use xi_rope::tree::{CursorState, Metric};
+
+    const SAMPLE_TEXT: &str = "zero\none\u{1F600}two\nthree\u{1F4A9}four\nlast line";
+
+    fn sample_rope() -> Rope {
+        Rope::from(SAMPLE_TEXT)
+    }
+
+    fn collect_test_positions<M>(rope: &Rope) -> Vec<usize>
+    where
+        M: Metric<RopeInfo, String>,
+    {
+        let mut cursor = Cursor::new(rope, 0);
+        let mut positions = vec![cursor.pos()];
+        while let Some(next) = cursor.next::<M>() {
+            positions.push(next);
+        }
+        if positions.last().copied() != Some(rope.len()) {
+            positions.push(rope.len());
+        }
+
+        let mut enriched = positions.clone();
+        for &pos in &positions {
+            if pos > 0 {
+                enriched.push(pos - 1);
+            }
+            if pos + 1 < rope.len() {
+                enriched.push(pos + 1);
+            }
+            if pos + 2 < rope.len() {
+                enriched.push(pos + 2);
+            }
+        }
+
+        enriched.sort_unstable();
+        enriched.dedup();
+        enriched
+    }
+
+    fn assert_state_navigation_parity<M>(rope: &Rope, metric_name: &str)
+    where
+        M: Metric<RopeInfo, String>,
+    {
+        let positions = collect_test_positions::<M>(rope);
+        for &pos in &positions {
+            let cursor_at_pos = Cursor::new(rope, pos);
+            let state = cursor_at_pos.state();
+            let leaf_offset_at_pos = cursor_at_pos.get_leaf().map(|(_, offset)| offset);
+            assert_eq!(
+                state.position(),
+                pos,
+                "state position mismatch for {metric_name} at {pos}",
+                metric_name = metric_name,
+                pos = pos
+            );
+            assert!(
+                state.is_valid(),
+                "state should be valid for {metric_name} at {pos}",
+                metric_name = metric_name,
+                pos = pos
+            );
+
+            let descriptor = state.to_descriptor();
+            let mut from_descriptor = Cursor::new(rope, 0);
+            assert!(
+                from_descriptor.apply_descriptor(&descriptor),
+                "descriptor apply failed for {metric_name} at {pos}",
+                metric_name = metric_name,
+                pos = pos
+            );
+            assert_eq!(
+                from_descriptor.pos(),
+                pos,
+                "descriptor restore pos mismatch for {metric_name} at {pos}",
+                metric_name = metric_name,
+                pos = pos
+            );
+            assert_eq!(
+                from_descriptor.get_leaf().map(|(_, offset)| offset),
+                leaf_offset_at_pos,
+                "descriptor leaf offset mismatch for {metric_name} at {pos}",
+                metric_name = metric_name,
+                pos = pos
+            );
+
+            // Verify next navigation parity.
+            let mut baseline_next = Cursor::new(rope, pos);
+            let expected_next = baseline_next.next::<M>();
+            let expected_next_pos = baseline_next.pos();
+            let expected_next_leaf_offset = baseline_next.get_leaf().map(|(_, offset)| offset);
+
+            let mut restored_next = state.restore(rope).expect("state restore should succeed");
+            let actual_next = restored_next.next::<M>();
+            assert_eq!(
+                actual_next,
+                expected_next,
+                "next mismatch for {metric}: {info}",
+                metric = metric_name,
+                info = pos
+            );
+            assert_eq!(
+                restored_next.pos(),
+                expected_next_pos,
+                "next pos mismatch for {metric_name} at {pos}",
+                metric_name = metric_name,
+                pos = pos
+            );
+            assert_eq!(
+                restored_next.get_leaf().map(|(_, offset)| offset),
+                expected_next_leaf_offset,
+                "next leaf offset mismatch for {metric_name} at {pos}",
+                metric_name = metric_name,
+                pos = pos
+            );
+
+            let restored_state_after_next = restored_next.state();
+            let baseline_state_after_next = baseline_next.state();
+            assert_eq!(
+                restored_state_after_next.position(),
+                baseline_state_after_next.position(),
+                "state position after next mismatch for {metric_name} at {pos}",
+                metric_name = metric_name,
+                pos = pos
+            );
+            assert_eq!(
+                restored_state_after_next.offset_of_leaf(),
+                baseline_state_after_next.offset_of_leaf(),
+                "state leaf offset after next mismatch for {metric_name} at {pos}",
+                metric_name = metric_name,
+                pos = pos
+            );
+
+            if pos > 0 {
+                let mut baseline_prev = Cursor::new(rope, pos);
+                let expected_prev = baseline_prev.prev::<M>();
+                let expected_prev_pos = baseline_prev.pos();
+                let expected_prev_leaf_offset = baseline_prev.get_leaf().map(|(_, offset)| offset);
+
+                let mut restored_prev = state.restore(rope).expect("state restore should succeed");
+                let actual_prev = restored_prev.prev::<M>();
+                assert_eq!(
+                    actual_prev,
+                    expected_prev,
+                    "prev mismatch for {metric}: {info}",
+                    metric = metric_name,
+                    info = pos
+                );
+                assert_eq!(
+                    restored_prev.pos(),
+                    expected_prev_pos,
+                    "prev pos mismatch for {metric_name} at {pos}",
+                    metric_name = metric_name,
+                    pos = pos
+                );
+                assert_eq!(
+                    restored_prev.get_leaf().map(|(_, offset)| offset),
+                    expected_prev_leaf_offset,
+                    "prev leaf offset mismatch for {metric_name} at {pos}",
+                    metric_name = metric_name,
+                    pos = pos
+                );
+
+                let restored_state_after_prev = restored_prev.state();
+                let baseline_state_after_prev = baseline_prev.state();
+                assert_eq!(
+                    restored_state_after_prev.position(),
+                    baseline_state_after_prev.position(),
+                    "state position after prev mismatch for {metric_name} at {pos}",
+                    metric_name = metric_name,
+                    pos = pos
+                );
+                assert_eq!(
+                    restored_state_after_prev.offset_of_leaf(),
+                    baseline_state_after_prev.offset_of_leaf(),
+                    "state leaf offset after prev mismatch for {metric_name} at {pos}",
+                    metric_name = metric_name,
+                    pos = pos
+                );
+            }
+        }
+    }
 
     #[test]
     fn cursor_state_round_trip_basic() {
@@ -196,5 +379,26 @@ mod cursor_state_tests {
 
         let state_from_descriptor = CursorState::from_descriptor(&descriptor);
         assert_eq!(state_from_descriptor.is_valid(), state.is_valid());
+    }
+
+    #[test]
+    fn cursor_state_preserves_navigation_base_metric() {
+        let rope = sample_rope();
+        assert_state_navigation_parity::<BaseMetric>(&rope, type_name::<BaseMetric>());
+    }
+
+    #[test]
+    fn cursor_state_preserves_navigation_lines_metric() {
+        let rope = sample_rope();
+        assert_state_navigation_parity::<LinesMetric>(&rope, type_name::<LinesMetric>());
+    }
+
+    #[test]
+    fn cursor_state_preserves_navigation_utf16_metric() {
+        let rope = sample_rope();
+        assert_state_navigation_parity::<Utf16CodeUnitsMetric>(
+            &rope,
+            type_name::<Utf16CodeUnitsMetric>(),
+        );
     }
 }
