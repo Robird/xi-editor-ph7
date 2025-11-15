@@ -332,7 +332,10 @@ mod tests {
         }
 
         for index in 0..2 {
-            assert_eq!(breaks.offset_of_break(index), breaks.count_base_units::<BreaksMetric>(index));
+            assert_eq!(
+                breaks.offset_of_break(index),
+                breaks.count_base_units::<BreaksMetric>(index)
+            );
         }
 
         assert_eq!(breaks.count_breaks_in_range(0..3), 1);

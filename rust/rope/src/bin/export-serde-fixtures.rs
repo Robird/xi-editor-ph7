@@ -14,7 +14,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use serde::Serialize;
 
 #[cfg(feature = "serde")]
-use xi_rope::serde_fixtures::{fixtures, Fixture};
+use xi_rope::serde_fixtures::{export_cursor_descriptor_fixtures, fixtures, Fixture};
 
 #[cfg(all(feature = "serde", feature = "tree_builder_slice_trace"))]
 use xi_rope::{
@@ -27,6 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = env::args().skip(1);
     let mut output_dir: Option<PathBuf> = None;
     let mut trace_dir: Option<PathBuf> = None;
+    let mut cursor_dir: Option<PathBuf> = None;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -37,10 +38,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 output_dir = Some(PathBuf::from(value));
             }
             "--tree-builder-trace" | "--tree-builder-dir" => {
-                let value = args
-                    .next()
-                    .ok_or_else(|| "--tree-builder-trace requires a value specifying the output directory")?;
+                let value = args.next().ok_or_else(|| {
+                    "--tree-builder-trace requires a value specifying the output directory"
+                })?;
                 trace_dir = Some(PathBuf::from(value));
+            }
+            "--cursor-descriptors" => {
+                let value = args.next().ok_or_else(|| {
+                    "--cursor-descriptors requires a value specifying the output directory"
+                })?;
+                cursor_dir = Some(PathBuf::from(value));
             }
             "--list" => {
                 list_fixtures();
@@ -56,9 +63,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    if output_dir.is_none() && trace_dir.is_none() {
+    if output_dir.is_none() && trace_dir.is_none() && cursor_dir.is_none() {
         print_usage();
-        return Err("missing required --dir <PATH> or --tree-builder-trace <PATH> argument".into());
+        return Err(
+            "missing required --dir <PATH>, --tree-builder-trace <PATH>, or --cursor-descriptors <PATH> argument"
+                .into(),
+        );
     }
 
     if let Some(dir) = output_dir {
@@ -69,13 +79,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         handle_tree_builder_trace(dir)?;
     }
 
+    if let Some(dir) = cursor_dir {
+        let report = export_cursor_descriptor_fixtures(dir.as_path())?;
+        println!(
+            "exported {count} cursor descriptor samples to {path}",
+            count = report.sample_count,
+            path = report.file_path.display()
+        );
+    }
+
     Ok(())
 }
 
 #[cfg(feature = "serde")]
 fn print_usage() {
     eprintln!(
-        "Usage: cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --dir <PATH> [--tree-builder-trace <PATH>]\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --tree-builder-trace <PATH>\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --list"
+        "Usage: cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --dir <PATH> [--tree-builder-trace <PATH>] [--cursor-descriptors <PATH>]\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --tree-builder-trace <PATH>\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --cursor-descriptors <PATH>\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --list"
     );
 }
 
@@ -221,10 +240,12 @@ impl From<&TreeBuilderEventKind> for SerializableEventKind {
             TreeBuilderEventKind::LeafSlice { interval } => {
                 SerializableEventKind::LeafSlice { interval: SerializableInterval::from(*interval) }
             }
-            TreeBuilderEventKind::EnterChild { requested, translated } => SerializableEventKind::EnterChild {
-                requested: SerializableInterval::from(*requested),
-                translated: SerializableInterval::from(*translated),
-            },
+            TreeBuilderEventKind::EnterChild { requested, translated } => {
+                SerializableEventKind::EnterChild {
+                    requested: SerializableInterval::from(*requested),
+                    translated: SerializableInterval::from(*translated),
+                }
+            }
         }
     }
 }

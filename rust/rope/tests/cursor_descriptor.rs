@@ -100,6 +100,35 @@ fn cursor_descriptor_rejects_invalid_snapshot() {
     assert_eq!(fresh.pos(), start_pos);
 }
 
+#[cfg(feature = "serde")]
+#[test]
+fn exporter_creates_cursor_descriptor_file() {
+    use std::fs;
+    use std::process::Command;
+
+    use tempfile::tempdir;
+    use xi_rope::serde_fixtures::cursor_descriptors::{
+        CursorDescriptorFixture, DescriptorMetric, CURSOR_DESCRIPTOR_FILENAME,
+    };
+
+    let temp_dir = tempdir().expect("create tempdir");
+    let output_dir = temp_dir.path().join("cursor_fixtures");
+    let status = Command::new(env!("CARGO_BIN_EXE_export-serde-fixtures"))
+        .args(["--cursor-descriptors", output_dir.to_str().expect("path to str")])
+        .status()
+        .expect("failed to run exporter");
+    assert!(status.success(), "exporter exited with {:?}", status);
+
+    let export_path = output_dir.join(CURSOR_DESCRIPTOR_FILENAME);
+    assert!(export_path.exists(), "missing cursor descriptor export");
+    let data = fs::read_to_string(&export_path).expect("read export");
+    let fixtures: Vec<CursorDescriptorFixture> =
+        serde_json::from_str(&data).expect("parse cursor fixtures");
+    assert!(fixtures.len() >= 10, "expected >=10 fixtures, got {}", fixtures.len());
+    assert!(fixtures.iter().any(|f| f.metric == DescriptorMetric::Lines));
+    assert!(fixtures.iter().any(|f| f.metric == DescriptorMetric::Utf16));
+}
+
 #[cfg(feature = "cursor_state")]
 mod cursor_state_tests {
     use super::*;

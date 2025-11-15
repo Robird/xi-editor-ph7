@@ -1161,10 +1161,7 @@ mod tests {
         boundary_offsets.dedup();
 
         for offset in &boundary_offsets {
-            assert_eq!(
-                rope.convert_lines_from_bytes(*offset),
-                rope.count::<LinesMetric>(*offset)
-            );
+            assert_eq!(rope.convert_lines_from_bytes(*offset), rope.count::<LinesMetric>(*offset));
             assert_eq!(
                 rope.convert_utf16_from_bytes(*offset),
                 rope.count::<Utf16CodeUnitsMetric>(*offset)

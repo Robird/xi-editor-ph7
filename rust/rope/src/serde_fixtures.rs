@@ -5,6 +5,14 @@
 
 #![cfg(feature = "serde")]
 
+pub mod cursor_descriptors;
+
+pub use cursor_descriptors::{
+    cursor_descriptor_samples, export_cursor_descriptor_fixtures, CursorDescriptorExportReport,
+    CursorDescriptorFixture, CursorDescriptorFrame, CursorDescriptorOffsets, DescriptorMetric,
+    CURSOR_DESCRIPTOR_FILENAME,
+};
+
 /// Describes a single serde regression fixture.
 #[derive(Copy, Clone, Debug)]
 pub struct Fixture {

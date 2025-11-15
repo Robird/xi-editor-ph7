@@ -1036,6 +1036,14 @@ impl<N: NodeInfo<L>, L: Leaf> PathFrame<N, L> {
     pub fn child_offset(&self) -> usize {
         self.child_offset
     }
+
+    pub fn node_height(&self) -> usize {
+        self.node.height
+    }
+
+    pub fn node_len(&self) -> usize {
+        self.node.len
+    }
 }
 
 /// A borrow-free snapshot of a cursor's cached state.
@@ -1086,6 +1094,11 @@ impl<N: NodeInfo<L>, L: Leaf> CursorDescriptor<N, L> {
     /// Returns the frames describing the cached path from root to leaf.
     pub fn frames(&self) -> &[PathFrame<N, L>] {
         &self.frames
+    }
+
+    /// Returns the length of the cached leaf, if the descriptor is valid.
+    pub fn leaf_len(&self) -> Option<usize> {
+        self.leaf.as_ref().map(|leaf| leaf.len)
     }
 
     /// Restores a [`Cursor`] from this descriptor if the cached nodes still belong to `root`.
