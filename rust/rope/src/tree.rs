@@ -614,6 +614,41 @@ impl<N: NodeInfo<L>, L: Leaf> Default for Node<N, L> {
     }
 }
 
+#[cfg(feature = "tree_builder_slice_trace")]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TreeBuilderEventKind {
+    PushFrame,
+    ExtendFrame,
+    MergePop { merged_children: usize },
+    LeafSlice { interval: Interval },
+    EnterChild { requested: Interval, translated: Interval },
+}
+
+#[cfg(feature = "tree_builder_slice_trace")]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TreeBuilderEvent {
+    pub kind: TreeBuilderEventKind,
+    pub depth: usize,
+    pub node_height: usize,
+    pub node_len: usize,
+    pub node_ptr: usize,
+    pub reuse: bool,
+}
+
+#[cfg(feature = "tree_builder_slice_trace")]
+pub trait TreeBuilderTracer<N: NodeInfo<L>, L: Leaf> {
+    fn record(&mut self, event: TreeBuilderEvent);
+}
+
+#[cfg(feature = "tree_builder_slice_trace")]
+#[derive(Default)]
+pub struct NullTreeBuilderTracer;
+
+#[cfg(feature = "tree_builder_slice_trace")]
+impl<N: NodeInfo<L>, L: Leaf> TreeBuilderTracer<N, L> for NullTreeBuilderTracer {
+    fn record(&mut self, _event: TreeBuilderEvent) {}
+}
+
 /// A builder for creating new trees.
 pub struct TreeBuilder<N: NodeInfo<L>, L: Leaf> {
     // A stack of partially built trees. These are kept in order of
@@ -623,16 +658,44 @@ pub struct TreeBuilder<N: NodeInfo<L>, L: Leaf> {
     // In addition, there is a balancing invariant: for each vector
     // of length greater than one, all elements satisfy `is_ok_child`.
     stack: Vec<Vec<Node<N, L>>>,
+    #[cfg(feature = "tree_builder_slice_trace")]
+    tracer: Option<Box<dyn TreeBuilderTracer<N, L>>>,
 }
 
 impl<N: NodeInfo<L>, L: Leaf> TreeBuilder<N, L> {
     /// A new, empty builder.
     pub fn new() -> TreeBuilder<N, L> {
-        TreeBuilder { stack: Vec::new() }
+        TreeBuilder {
+            stack: Vec::new(),
+            #[cfg(feature = "tree_builder_slice_trace")]
+            tracer: None,
+        }
+    }
+
+    #[cfg(feature = "tree_builder_slice_trace")]
+    /// Create a builder configured with a tracer.
+    pub fn with_tracer(tracer: Box<dyn TreeBuilderTracer<N, L>>) -> TreeBuilder<N, L> {
+        TreeBuilder { stack: Vec::new(), tracer: Some(tracer) }
+    }
+
+    #[cfg(feature = "tree_builder_slice_trace")]
+    /// Replace the tracer used by this builder.
+    pub fn set_tracer(&mut self, tracer: Option<Box<dyn TreeBuilderTracer<N, L>>>) {
+        self.tracer = tracer;
     }
 
     /// Append a node to the tree being built.
-    pub fn push(&mut self, mut n: Node<N, L>) {
+    pub fn push(&mut self, n: Node<N, L>) {
+        self.push_with_hint(n, false);
+    }
+
+    fn push_with_hint(&mut self, mut n: Node<N, L>, reuse_hint: bool) {
+        #[cfg(not(feature = "tree_builder_slice_trace"))]
+        let _ = reuse_hint;
+
+        #[cfg(feature = "tree_builder_slice_trace")]
+        let mut reuse_flag = reuse_hint;
+
         loop {
             let ord = if let Some(last) = self.stack.last() {
                 last[0].height().cmp(&n.height())
@@ -641,23 +704,59 @@ impl<N: NodeInfo<L>, L: Leaf> TreeBuilder<N, L> {
             };
             match ord {
                 Ordering::Less => {
-                    n = Node::concat(self.pop(), n);
+                    let popped = self.pop();
+                    n = Node::concat(popped, n);
+                    #[cfg(feature = "tree_builder_slice_trace")]
+                    {
+                        reuse_flag = false;
+                    }
                 }
                 Ordering::Equal => {
-                    let tos = self.stack.last_mut().unwrap();
-                    if tos.last().unwrap().is_ok_child() && n.is_ok_child() {
-                        tos.push(n);
+                    let can_extend =
+                        self.stack.last().unwrap().last().unwrap().is_ok_child() && n.is_ok_child();
+                    if can_extend {
+                        #[cfg(feature = "tree_builder_slice_trace")]
+                        let (node_ptr, node_height, node_len) =
+                            (Self::node_identity(&n), n.height(), n.len());
+                        let should_break = {
+                            let frame = self.stack.last_mut().unwrap();
+                            frame.push(n);
+                            frame.len() < MAX_CHILDREN
+                        };
+                        #[cfg(feature = "tree_builder_slice_trace")]
+                        self.trace_extend_frame(node_height, node_len, node_ptr, reuse_flag);
+                        if should_break {
+                            break;
+                        }
+                        n = self.pop();
+                        #[cfg(feature = "tree_builder_slice_trace")]
+                        {
+                            reuse_flag = false;
+                        }
                     } else if n.height() == 0 {
                         let iv = Interval::new(0, n.len());
-                        let new_leaf = tos
+                        let new_leaf = self
+                            .stack
+                            .last_mut()
+                            .unwrap()
                             .last_mut()
                             .unwrap()
                             .with_leaf_mut(|l| l.push_maybe_split(n.get_leaf(), iv));
                         if let Some(new_leaf) = new_leaf {
-                            tos.push(Node::from_leaf(new_leaf));
+                            let new_node = Node::from_leaf(new_leaf);
+                            #[cfg(feature = "tree_builder_slice_trace")]
+                            let (node_ptr, node_height, node_len) =
+                                (Self::node_identity(&new_node), new_node.height(), new_node.len());
+                            {
+                                let frame = self.stack.last_mut().unwrap();
+                                frame.push(new_node);
+                            }
+                            #[cfg(feature = "tree_builder_slice_trace")]
+                            self.trace_extend_frame(node_height, node_len, node_ptr, false);
                         }
+                        break;
                     } else {
-                        let mut last = tos.pop().unwrap();
+                        let mut last = self.stack.last_mut().unwrap().pop().unwrap();
                         let existing_len = last.get_children().len();
                         let new_children: Vec<Node<N, L>> =
                             n.get_children().iter().cloned().collect();
@@ -665,7 +764,10 @@ impl<N: NodeInfo<L>, L: Leaf> TreeBuilder<N, L> {
                         if total_children <= MAX_CHILDREN {
                             last.shared_mut()
                                 .replace_child_range(existing_len..existing_len, &new_children);
-                            tos.push(last);
+                            {
+                                let frame = self.stack.last_mut().unwrap();
+                                frame.push(last);
+                            }
                         } else {
                             // Note: this leans left. Splitting at midpoint is also an option
                             let mut combined: Vec<Node<N, L>> =
@@ -678,21 +780,136 @@ impl<N: NodeInfo<L>, L: Leaf> TreeBuilder<N, L> {
                                 Node::from_shared(last.shared().clone_with_children(&left_nodes));
                             let right =
                                 Node::from_shared(last.shared().clone_with_children(&right_nodes));
-                            tos.push(left);
-                            tos.push(right);
+                            {
+                                let frame = self.stack.last_mut().unwrap();
+                                frame.push(left);
+                            }
+                            #[cfg(feature = "tree_builder_slice_trace")]
+                            let (node_ptr, node_height, node_len) =
+                                (Self::node_identity(&right), right.height(), right.len());
+                            {
+                                let frame = self.stack.last_mut().unwrap();
+                                frame.push(right);
+                            }
+                            #[cfg(feature = "tree_builder_slice_trace")]
+                            self.trace_extend_frame(node_height, node_len, node_ptr, false);
+                        }
+                        if self.stack.last().unwrap().len() < MAX_CHILDREN {
+                            break;
+                        }
+                        n = self.pop();
+                        #[cfg(feature = "tree_builder_slice_trace")]
+                        {
+                            reuse_flag = false;
                         }
                     }
-                    if tos.len() < MAX_CHILDREN {
-                        break;
-                    }
-                    n = self.pop()
                 }
                 Ordering::Greater => {
-                    self.stack.push(vec![n]);
+                    #[cfg(feature = "tree_builder_slice_trace")]
+                    {
+                        let node_ptr = Self::node_identity(&n);
+                        let node_height = n.height();
+                        let node_len = n.len();
+                        self.stack.push(vec![n]);
+                        self.trace_push_frame(node_height, node_len, node_ptr, reuse_flag);
+                    }
+                    #[cfg(not(feature = "tree_builder_slice_trace"))]
+                    {
+                        self.stack.push(vec![n]);
+                    }
                     break;
                 }
             }
         }
+    }
+
+    #[cfg(feature = "tree_builder_slice_trace")]
+    fn trace_push_frame(
+        &mut self,
+        node_height: usize,
+        node_len: usize,
+        node_ptr: usize,
+        reuse: bool,
+    ) {
+        let depth = self.stack.len();
+        self.trace_event(TreeBuilderEvent {
+            kind: TreeBuilderEventKind::PushFrame,
+            depth,
+            node_height,
+            node_len,
+            node_ptr,
+            reuse,
+        });
+    }
+
+    #[cfg(feature = "tree_builder_slice_trace")]
+    fn trace_extend_frame(
+        &mut self,
+        node_height: usize,
+        node_len: usize,
+        node_ptr: usize,
+        reuse: bool,
+    ) {
+        let depth = self.stack.len();
+        self.trace_event(TreeBuilderEvent {
+            kind: TreeBuilderEventKind::ExtendFrame,
+            depth,
+            node_height,
+            node_len,
+            node_ptr,
+            reuse,
+        });
+    }
+
+    #[cfg(feature = "tree_builder_slice_trace")]
+    fn trace_merge_pop(&mut self, node: &Node<N, L>, merged_children: usize) {
+        let depth = self.stack.len();
+        self.trace_event(TreeBuilderEvent {
+            kind: TreeBuilderEventKind::MergePop { merged_children },
+            depth,
+            node_height: node.height(),
+            node_len: node.len(),
+            node_ptr: Self::node_identity(node),
+            reuse: false,
+        });
+    }
+
+    #[cfg(feature = "tree_builder_slice_trace")]
+    fn trace_leaf_slice(&mut self, node: &Node<N, L>, interval: Interval) {
+        let depth = self.stack.len();
+        self.trace_event(TreeBuilderEvent {
+            kind: TreeBuilderEventKind::LeafSlice { interval },
+            depth,
+            node_height: node.height(),
+            node_len: node.len(),
+            node_ptr: Self::node_identity(node),
+            reuse: false,
+        });
+    }
+
+    #[cfg(feature = "tree_builder_slice_trace")]
+    fn trace_enter_child(&mut self, child: &Node<N, L>, requested: Interval, translated: Interval) {
+        let depth = self.stack.len();
+        self.trace_event(TreeBuilderEvent {
+            kind: TreeBuilderEventKind::EnterChild { requested, translated },
+            depth,
+            node_height: child.height(),
+            node_len: child.len(),
+            node_ptr: Self::node_identity(child),
+            reuse: false,
+        });
+    }
+
+    #[cfg(feature = "tree_builder_slice_trace")]
+    fn trace_event(&mut self, event: TreeBuilderEvent) {
+        if let Some(tracer) = self.tracer.as_mut() {
+            tracer.record(event);
+        }
+    }
+
+    #[cfg(feature = "tree_builder_slice_trace")]
+    fn node_identity(node: &Node<N, L>) -> usize {
+        Arc::as_ptr(node.shared.arc()) as usize
     }
 
     /// Push a subsequence of a rope.
@@ -708,7 +925,7 @@ impl<N: NodeInfo<L>, L: Leaf> TreeBuilder<N, L> {
             return;
         }
         if iv == n.interval() {
-            self.push(n.clone());
+            self.push_with_hint(n.clone(), true);
             return;
         }
         match &n.body().val {
@@ -722,9 +939,14 @@ impl<N: NodeInfo<L>, L: Leaf> TreeBuilder<N, L> {
                         break;
                     }
                     let child_iv = child.interval();
-                    // easier just to use signed ints?
-                    let rec_iv = iv.intersect(child_iv.translate(offset)).translate_neg(offset);
-                    self.push_slice(child, rec_iv);
+                    let translated = child_iv.translate(offset);
+                    let requested_iv = iv.intersect(translated);
+                    if !requested_iv.is_empty() {
+                        let rec_iv = requested_iv.translate_neg(offset);
+                        #[cfg(feature = "tree_builder_slice_trace")]
+                        self.trace_enter_child(child, requested_iv, rec_iv);
+                        self.push_slice(child, rec_iv);
+                    }
                     offset += child.len();
                 }
             }
@@ -745,7 +967,12 @@ impl<N: NodeInfo<L>, L: Leaf> TreeBuilder<N, L> {
 
     /// Append a slice of a single leaf.
     pub fn push_leaf_slice(&mut self, l: &L, iv: Interval) {
-        self.push(Node::from_leaf(l.subseq(iv)))
+        let node = Node::from_leaf(l.subseq(iv));
+        #[cfg(feature = "tree_builder_slice_trace")]
+        let cloned_for_trace = node.clone();
+        self.push(node);
+        #[cfg(feature = "tree_builder_slice_trace")]
+        self.trace_leaf_slice(&cloned_for_trace, iv);
     }
 
     /// Build the final tree.
@@ -767,11 +994,15 @@ impl<N: NodeInfo<L>, L: Leaf> TreeBuilder<N, L> {
     /// Pop the last vec-of-nodes off the stack, resulting in a node.
     fn pop(&mut self) -> Node<N, L> {
         let nodes = self.stack.pop().unwrap();
-        if nodes.len() == 1 {
+        let merged_children = nodes.len();
+        let result = if merged_children == 1 {
             nodes.into_iter().next().unwrap()
         } else {
             Node::from_nodes(nodes)
-        }
+        };
+        #[cfg(feature = "tree_builder_slice_trace")]
+        self.trace_merge_pop(&result, merged_children);
+        result
     }
 }
 

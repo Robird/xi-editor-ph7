@@ -63,3 +63,7 @@ pub use crate::rope::{LinesMetric, Rope, RopeDelta, RopeInfo};
 #[cfg(feature = "cursor_state")]
 pub use crate::tree::CursorState;
 pub use crate::tree::{Cursor, CursorDescriptor, Metric};
+#[cfg(feature = "tree_builder_slice_trace")]
+pub use crate::tree::{
+    NullTreeBuilderTracer, TreeBuilderEvent, TreeBuilderEventKind, TreeBuilderTracer,
+};
