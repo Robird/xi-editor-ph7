@@ -23,6 +23,7 @@ use crate::metrics::{
 use crate::tree::{DefaultMetricProvider, Leaf, Metric, Node, NodeInfo, TreeBuilder};
 use std::cmp::min;
 use std::mem;
+use std::ops::Range;
 
 /// A set of indexes. A motivating use is storing line breaks.
 pub type Breaks = Node<BreaksInfo, BreaksLeaf>;
@@ -159,6 +160,29 @@ impl Breaks {
         let leaf = BreaksLeaf { len, data: vec![] };
         Node::<BreaksInfo, BreaksLeaf>::from_leaf(leaf)
     }
+
+    /// Interop shim that counts soft breaks before or at `offset` without exposing metrics.
+    #[inline]
+    pub fn count_breaks_up_to(&self, offset: usize) -> usize {
+        self.count::<BreaksMetric>(offset)
+    }
+
+    /// Interop shim that returns the base-unit offset for the `index`th soft break.
+    #[inline]
+    pub fn offset_of_break(&self, index: usize) -> usize {
+        self.count_base_units::<BreaksMetric>(index)
+    }
+
+    /// Interop shim that reports how many soft breaks lie within `range`.
+    #[inline]
+    pub fn count_breaks_in_range(&self, range: Range<usize>) -> usize {
+        if range.start >= range.end {
+            return 0;
+        }
+        let start = self.count_breaks_up_to(range.start);
+        let end = self.count_breaks_up_to(range.end);
+        end.saturating_sub(start)
+    }
 }
 
 pub struct BreakBuilder {
@@ -282,5 +306,39 @@ mod tests {
             breaks.convert_metrics::<BreaksMetric, BreaksBaseMetric>(7),
             breaks.count_base_units::<BreaksMetric>(7)
         );
+    }
+
+    #[test]
+    fn helper_handles_empty_breaks() {
+        let breaks = Breaks::new_no_break(42);
+        for offset in [0, 1, 41, 42, 100] {
+            assert_eq!(breaks.count_breaks_up_to(offset), breaks.count::<BreaksMetric>(offset));
+        }
+        assert_eq!(breaks.count_breaks_in_range(0..0), 0);
+        assert_eq!(breaks.count_breaks_in_range(0..10), 0);
+        assert_eq!(breaks.count_breaks_in_range(10..5), 0);
+    }
+
+    #[test]
+    fn helper_matches_metric_parity() {
+        let mut builder = BreakBuilder::new();
+        builder.add_break(3);
+        builder.add_no_break(4);
+        builder.add_break(2);
+        let breaks = builder.build();
+
+        for offset in 0..=9 {
+            assert_eq!(breaks.count_breaks_up_to(offset), breaks.count::<BreaksMetric>(offset));
+        }
+
+        for index in 0..2 {
+            assert_eq!(breaks.offset_of_break(index), breaks.count_base_units::<BreaksMetric>(index));
+        }
+
+        assert_eq!(breaks.count_breaks_in_range(0..3), 1);
+        assert_eq!(breaks.count_breaks_in_range(3..9), 1);
+        assert_eq!(breaks.count_breaks_in_range(0..9), 2);
+        assert_eq!(breaks.count_breaks_in_range(9..9), 0);
+        assert_eq!(breaks.count_breaks_in_range(9..8), 0);
     }
 }

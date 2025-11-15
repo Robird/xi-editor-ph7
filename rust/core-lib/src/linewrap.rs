@@ -157,7 +157,7 @@ impl Lines {
     pub(crate) fn visual_line_of_offset(&self, text: &Rope, offset: usize) -> usize {
         let mut line = text.line_of_offset(offset);
         if self.wrap != WrapWidth::None {
-            line += self.breaks.count::<BreaksMetric>(offset)
+            line += self.breaks.count_breaks_up_to(offset);
         }
         line
     }

@@ -435,6 +435,42 @@ impl Rope {
         }
     }
 
+    /// Converts a UTF-8 byte offset into a zero-based line count.
+    ///
+    /// This portability shim mirrors `count::<LinesMetric>` for consumers in
+    /// other languages that cannot call the generic metric APIs directly.
+    #[inline]
+    pub fn convert_lines_from_bytes(&self, offset: usize) -> usize {
+        self.count::<LinesMetric>(offset)
+    }
+
+    /// Converts a zero-based line index into a UTF-8 byte offset.
+    ///
+    /// This portability shim mirrors `count_base_units::<LinesMetric>` for
+    /// language bindings that require concrete method names.
+    #[inline]
+    pub fn convert_bytes_from_lines(&self, line: usize) -> usize {
+        self.count_base_units::<LinesMetric>(line)
+    }
+
+    /// Converts a UTF-8 byte offset into a UTF-16 code unit count.
+    ///
+    /// This portability shim mirrors `count::<Utf16CodeUnitsMetric>` to make
+    /// cross-language consumers independent of the generic metric plumbing.
+    #[inline]
+    pub fn convert_utf16_from_bytes(&self, offset: usize) -> usize {
+        self.count::<Utf16CodeUnitsMetric>(offset)
+    }
+
+    /// Converts a UTF-16 code unit count into a UTF-8 byte offset.
+    ///
+    /// This portability shim mirrors `count_base_units::<Utf16CodeUnitsMetric>`
+    /// for language bindings that prefer dedicated helper names.
+    #[inline]
+    pub fn convert_bytes_from_utf16(&self, units: usize) -> usize {
+        self.count_base_units::<Utf16CodeUnitsMetric>(units)
+    }
+
     /// Returns an iterator over chunks of the rope.
     ///
     /// Each chunk is a `&str` slice borrowed from the rope's storage. The size
@@ -1084,6 +1120,74 @@ mod tests {
 
         let utf8_offset = rope_with_emoji.count_base_units::<Utf16CodeUnitsMetric>(utf16_units);
         assert_eq!(utf8_offset, 19);
+    }
+
+    #[test]
+    fn rope_metric_conversion_shims() {
+        let empty = Rope::from("");
+        assert_eq!(empty.convert_lines_from_bytes(0), empty.count::<LinesMetric>(0));
+        assert_eq!(empty.convert_bytes_from_lines(0), empty.count_base_units::<LinesMetric>(0));
+        assert_eq!(empty.convert_utf16_from_bytes(0), empty.count::<Utf16CodeUnitsMetric>(0));
+        assert_eq!(
+            empty.convert_bytes_from_utf16(0),
+            empty.count_base_units::<Utf16CodeUnitsMetric>(0)
+        );
+
+        let ascii = Rope::from("a\nb\nc");
+        for offset in 0..=ascii.len() {
+            assert_eq!(ascii.convert_lines_from_bytes(offset), ascii.count::<LinesMetric>(offset));
+        }
+        for line in 0..=ascii.measure::<LinesMetric>() {
+            assert_eq!(
+                ascii.convert_bytes_from_lines(line),
+                ascii.count_base_units::<LinesMetric>(line)
+            );
+        }
+        assert_eq!(ascii.convert_bytes_from_lines(0), 0);
+        assert_eq!(ascii.convert_bytes_from_lines(1), 2);
+        assert_eq!(ascii.convert_bytes_from_lines(2), 4);
+        assert_eq!(ascii.convert_lines_from_bytes(ascii.len()), 2);
+
+        let rich_text = "a😀b\n💖";
+        let rope = Rope::from(rich_text);
+
+        let mut boundary_offsets: Vec<usize> = Vec::new();
+        boundary_offsets.push(0);
+        for (idx, _) in rich_text.char_indices() {
+            boundary_offsets.push(idx);
+        }
+        boundary_offsets.push(rich_text.len());
+        boundary_offsets.sort();
+        boundary_offsets.dedup();
+
+        for offset in &boundary_offsets {
+            assert_eq!(
+                rope.convert_lines_from_bytes(*offset),
+                rope.count::<LinesMetric>(*offset)
+            );
+            assert_eq!(
+                rope.convert_utf16_from_bytes(*offset),
+                rope.count::<Utf16CodeUnitsMetric>(*offset)
+            );
+        }
+
+        for line in 0..=rope.measure::<LinesMetric>() {
+            assert_eq!(
+                rope.convert_bytes_from_lines(line),
+                rope.count_base_units::<LinesMetric>(line)
+            );
+        }
+
+        for units in 0..=rope.measure::<Utf16CodeUnitsMetric>() {
+            assert_eq!(
+                rope.convert_bytes_from_utf16(units),
+                rope.count_base_units::<Utf16CodeUnitsMetric>(units)
+            );
+        }
+
+        let bytes_after_emoji = "a😀".len();
+        assert_eq!(rope.convert_utf16_from_bytes(bytes_after_emoji), 3);
+        assert_eq!(rope.convert_bytes_from_utf16(3), bytes_after_emoji);
     }
 
     #[test]
