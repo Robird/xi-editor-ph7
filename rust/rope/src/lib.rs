@@ -60,4 +60,6 @@ pub mod tree;
 pub use crate::delta::{Builder as DeltaBuilder, Delta, DeltaElement, Transformer};
 pub use crate::interval::Interval;
 pub use crate::rope::{LinesMetric, Rope, RopeDelta, RopeInfo};
+#[cfg(feature = "cursor_state")]
+pub use crate::tree::CursorState;
 pub use crate::tree::{Cursor, CursorDescriptor, Metric};

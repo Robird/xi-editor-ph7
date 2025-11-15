@@ -782,6 +782,7 @@ const CURSOR_CACHE_SIZE: usize = 4;
 ///
 /// Frames are stored from root to leaf and keep enough information to rebuild
 /// cached offsets without walking sibling lengths again.
+#[derive(Clone)]
 pub struct PathFrame<N: NodeInfo<L>, L: Leaf> {
     node: Arc<NodeBody<N, L>>,
     child_index: usize,
@@ -867,6 +868,8 @@ impl<N: NodeInfo<L>, L: Leaf> CursorDescriptor<N, L> {
             cache: [None; CURSOR_CACHE_SIZE],
             leaf: None,
             offset_of_leaf: 0,
+            #[cfg(feature = "cursor_state")]
+            state: CursorState::new_invalid(self.position, 0),
         };
         if cursor.apply_descriptor(self) {
             Some(cursor)
@@ -874,6 +877,15 @@ impl<N: NodeInfo<L>, L: Leaf> CursorDescriptor<N, L> {
             None
         }
     }
+}
+
+#[cfg(feature = "cursor_state")]
+#[derive(Clone)]
+pub struct CursorState<N: NodeInfo<L>, L: Leaf> {
+    position: usize,
+    offset_of_leaf: usize,
+    leaf: Option<Arc<NodeBody<N, L>>>,
+    frames: SmallVec<[PathFrame<N, L>; CURSOR_CACHE_SIZE]>,
 }
 
 /// A data structure for traversing boundaries in a tree.
@@ -909,6 +921,8 @@ pub struct Cursor<'a, N: NodeInfo<L> + 'a, L: Leaf> {
     leaf: Option<&'a L>,
     /// The offset of `leaf` within the tree.
     offset_of_leaf: usize,
+    #[cfg(feature = "cursor_state")]
+    state: CursorState<N, L>,
 }
 
 impl<'a, N: NodeInfo<L>, L: Leaf> Cursor<'a, N, L> {
@@ -920,6 +934,8 @@ impl<'a, N: NodeInfo<L>, L: Leaf> Cursor<'a, N, L> {
             cache: [None; CURSOR_CACHE_SIZE],
             leaf: None,
             offset_of_leaf: 0,
+            #[cfg(feature = "cursor_state")]
+            state: CursorState::new_invalid(position, 0),
         };
         result.descend();
         result
@@ -933,6 +949,11 @@ impl<'a, N: NodeInfo<L>, L: Leaf> Cursor<'a, N, L> {
     /// Return a reference to the root node of the tree.
     pub fn root(&self) -> &'a Node<N, L> {
         self.root
+    }
+
+    #[cfg(feature = "cursor_state")]
+    pub fn state(&self) -> CursorState<N, L> {
+        self.state.clone()
     }
 
     /// Get the current leaf of the cursor.
@@ -954,6 +975,8 @@ impl<'a, N: NodeInfo<L>, L: Leaf> Cursor<'a, N, L> {
         if let Some(l) = self.leaf {
             if self.position >= self.offset_of_leaf && self.position < self.offset_of_leaf + l.len()
             {
+                #[cfg(feature = "cursor_state")]
+                self.update_state_position();
                 return;
             }
         }
@@ -1083,6 +1106,9 @@ impl<'a, N: NodeInfo<L>, L: Leaf> Cursor<'a, N, L> {
     pub fn prev<M: Metric<N, L>>(&mut self) -> Option<usize> {
         if self.position == 0 || self.leaf.is_none() {
             self.leaf = None;
+            self.offset_of_leaf = self.position.min(self.root.len());
+            #[cfg(feature = "cursor_state")]
+            self.invalidate_state();
             return None;
         }
         let orig_pos = self.position;
@@ -1106,6 +1132,9 @@ impl<'a, N: NodeInfo<L>, L: Leaf> Cursor<'a, N, L> {
         if measure == 0 {
             self.leaf = None;
             self.position = 0;
+            self.offset_of_leaf = 0;
+            #[cfg(feature = "cursor_state")]
+            self.invalidate_state();
             return None;
         }
         self.descend_metric::<M>(measure);
@@ -1120,6 +1149,10 @@ impl<'a, N: NodeInfo<L>, L: Leaf> Cursor<'a, N, L> {
     pub fn next<M: Metric<N, L>>(&mut self) -> Option<usize> {
         if self.position >= self.root.len() || self.leaf.is_none() {
             self.leaf = None;
+            self.position = self.position.min(self.root.len());
+            self.offset_of_leaf = self.position;
+            #[cfg(feature = "cursor_state")]
+            self.invalidate_state();
             return None;
         }
 
@@ -1142,6 +1175,9 @@ impl<'a, N: NodeInfo<L>, L: Leaf> Cursor<'a, N, L> {
         // Not found, properly invalidate cursor.
         self.position = self.root.len();
         self.leaf = None;
+        self.offset_of_leaf = self.position;
+        #[cfg(feature = "cursor_state")]
+        self.invalidate_state();
         None
     }
 
@@ -1201,6 +1237,8 @@ impl<'a, N: NodeInfo<L>, L: Leaf> Cursor<'a, N, L> {
         }
         let offset_in_leaf = M::prev(l, len)?;
         self.position = self.offset_of_leaf + offset_in_leaf;
+        #[cfg(feature = "cursor_state")]
+        self.update_state_position();
         Some(self.position)
     }
 
@@ -1214,6 +1252,8 @@ impl<'a, N: NodeInfo<L>, L: Leaf> Cursor<'a, N, L> {
             let _ = self.next_leaf();
         } else {
             self.position = self.offset_of_leaf + offset_in_leaf;
+            #[cfg(feature = "cursor_state")]
+            self.update_state_position();
         }
         Some(self.position)
     }
@@ -1223,11 +1263,15 @@ impl<'a, N: NodeInfo<L>, L: Leaf> Cursor<'a, N, L> {
     /// Return value: same as [`get_leaf`](#method.get_leaf).
     pub fn next_leaf(&mut self) -> Option<(&'a L, usize)> {
         let leaf = self.leaf?;
-        self.position = self.offset_of_leaf + leaf.len();
+        let new_offset = self.offset_of_leaf + leaf.len();
+        self.position = new_offset;
         for i in 0..CURSOR_CACHE_SIZE {
             if self.cache[i].is_none() {
                 // this probably can't happen
                 self.leaf = None;
+                self.offset_of_leaf = self.position.min(self.root.len());
+                #[cfg(feature = "cursor_state")]
+                self.invalidate_state();
                 return None;
             }
             let (node, j) = self.cache[i].unwrap();
@@ -1238,16 +1282,20 @@ impl<'a, N: NodeInfo<L>, L: Leaf> Cursor<'a, N, L> {
                     self.cache[k] = Some((node_down, 0));
                     node_down = &node_down.get_children()[0];
                 }
-                self.leaf = Some(node_down.get_leaf());
-                self.offset_of_leaf = self.position;
+                self.set_leaf_from_node(node_down, new_offset);
                 return self.get_leaf();
             }
         }
-        if self.offset_of_leaf + self.leaf.unwrap().len() == self.root.len() {
+        if self.offset_of_leaf + leaf.len() == self.root.len() {
             self.leaf = None;
+            self.offset_of_leaf = self.position.min(self.root.len());
+            #[cfg(feature = "cursor_state")]
+            self.invalidate_state();
             return None;
         }
         self.descend();
+        #[cfg(feature = "cursor_state")]
+        self.update_state_position();
         self.get_leaf()
     }
 
@@ -1258,12 +1306,21 @@ impl<'a, N: NodeInfo<L>, L: Leaf> Cursor<'a, N, L> {
         if self.offset_of_leaf == 0 {
             self.leaf = None;
             self.position = 0;
+            #[cfg(feature = "cursor_state")]
+            {
+                self.offset_of_leaf = 0;
+                self.invalidate_state();
+            }
             return None;
         }
         for i in 0..CURSOR_CACHE_SIZE {
             if self.cache[i].is_none() {
                 // this probably can't happen
                 self.leaf = None;
+                self.position = self.offset_of_leaf.saturating_sub(1);
+                self.offset_of_leaf = self.position.min(self.root.len());
+                #[cfg(feature = "cursor_state")]
+                self.invalidate_state();
                 return None;
             }
             let (node, j) = self.cache[i].unwrap();
@@ -1275,16 +1332,17 @@ impl<'a, N: NodeInfo<L>, L: Leaf> Cursor<'a, N, L> {
                     self.cache[k] = Some((node_down, last_ix));
                     node_down = &node_down.get_children()[last_ix];
                 }
-                let leaf = node_down.get_leaf();
-                self.leaf = Some(leaf);
-                self.offset_of_leaf -= leaf.len();
-                self.position = self.offset_of_leaf;
+                let new_offset = self.offset_of_leaf - node_down.len();
+                self.position = new_offset;
+                self.set_leaf_from_node(node_down, new_offset);
                 return self.get_leaf();
             }
         }
         self.position = self.offset_of_leaf - 1;
         self.descend();
         self.position = self.offset_of_leaf;
+        #[cfg(feature = "cursor_state")]
+        self.update_state_position();
         self.get_leaf()
     }
 
@@ -1371,13 +1429,34 @@ impl<'a, N: NodeInfo<L>, L: Leaf> Cursor<'a, N, L> {
             }
             node = &children[i];
         }
-        self.set_leaf_from_node(node, offset);
         self.position = offset;
+        self.set_leaf_from_node(node, offset);
     }
     #[inline]
     fn set_leaf_from_node(&mut self, leaf_node: &'a Node<N, L>, offset: usize) {
         self.leaf = Some(leaf_node.get_leaf());
         self.offset_of_leaf = offset;
+        #[cfg(feature = "cursor_state")]
+        self.rebuild_state();
+    }
+
+    #[cfg(feature = "cursor_state")]
+    fn rebuild_state(&mut self) {
+        self.state = CursorState::from_cursor(self);
+    }
+
+    #[cfg(feature = "cursor_state")]
+    fn update_state_position(&mut self) {
+        if self.leaf.is_some() {
+            self.state.set_position(self.position);
+        } else {
+            self.state.invalidate(self.position, self.offset_of_leaf);
+        }
+    }
+
+    #[cfg(feature = "cursor_state")]
+    fn invalidate_state(&mut self) {
+        self.state.invalidate(self.position, self.offset_of_leaf);
     }
 }
 
@@ -1414,6 +1493,89 @@ where
     /// [`Cursor`]: struct.Cursor.html
     pub fn pos(&self) -> usize {
         self.cursor.pos()
+    }
+}
+
+#[cfg(feature = "cursor_state")]
+impl<N: NodeInfo<L>, L: Leaf> CursorState<N, L> {
+    fn new(
+        position: usize,
+        offset_of_leaf: usize,
+        leaf: Arc<NodeBody<N, L>>,
+        frames: SmallVec<[PathFrame<N, L>; CURSOR_CACHE_SIZE]>,
+    ) -> Self {
+        CursorState { position, offset_of_leaf, leaf: Some(leaf), frames }
+    }
+
+    fn new_invalid(position: usize, offset_of_leaf: usize) -> Self {
+        CursorState { position, offset_of_leaf, leaf: None, frames: SmallVec::new() }
+    }
+
+    pub fn is_valid(&self) -> bool {
+        self.leaf.is_some()
+    }
+
+    pub fn position(&self) -> usize {
+        self.position
+    }
+
+    pub fn offset_of_leaf(&self) -> usize {
+        self.offset_of_leaf
+    }
+
+    pub fn frames(&self) -> &[PathFrame<N, L>] {
+        &self.frames
+    }
+
+    pub fn to_descriptor(&self) -> CursorDescriptor<N, L> {
+        if let Some(leaf) = &self.leaf {
+            CursorDescriptor::new(
+                self.position,
+                self.offset_of_leaf,
+                Arc::clone(leaf),
+                self.frames.clone(),
+            )
+        } else {
+            CursorDescriptor::new_invalid(self.position)
+        }
+    }
+
+    pub fn from_descriptor(descriptor: &CursorDescriptor<N, L>) -> Self {
+        if let Some(leaf) = &descriptor.leaf {
+            CursorState::new(
+                descriptor.position,
+                descriptor.offset_of_leaf,
+                Arc::clone(leaf),
+                descriptor.frames.clone(),
+            )
+        } else {
+            CursorState::new_invalid(descriptor.position, descriptor.offset_of_leaf)
+        }
+    }
+
+    pub fn restore<'a>(&self, root: &'a Node<N, L>) -> Option<Cursor<'a, N, L>> {
+        self.to_descriptor().restore(root)
+    }
+
+    pub fn from_cursor<'a>(cursor: &Cursor<'a, N, L>) -> Self {
+        if cursor.leaf.is_none() {
+            return CursorState::new_invalid(cursor.position, cursor.offset_of_leaf);
+        }
+        let (frames, leaf_arc, offset_of_leaf, _) =
+            build_descriptor_components(cursor.root, cursor.position);
+        debug_assert_eq!(offset_of_leaf, cursor.offset_of_leaf);
+        CursorState::new(cursor.position, offset_of_leaf, leaf_arc, frames)
+    }
+
+    fn set_position(&mut self, position: usize) {
+        self.position = position;
+    }
+
+    fn invalidate(&mut self, position: usize, offset_of_leaf: usize) {
+        self.position = position;
+        self.offset_of_leaf = offset_of_leaf;
+        self.leaf = None;
+        self.frames.clear();
     }
 }
 

@@ -99,3 +99,102 @@ fn cursor_descriptor_rejects_invalid_snapshot() {
     assert!(!fresh.apply_descriptor(&descriptor));
     assert_eq!(fresh.pos(), start_pos);
 }
+
+#[cfg(feature = "cursor_state")]
+mod cursor_state_tests {
+    use super::*;
+    use xi_rope::tree::CursorState;
+
+    #[test]
+    fn cursor_state_round_trip_basic() {
+        let text = Rope::from("one line\ntwo line\nthree\n");
+        let positions = [0, 4, 9, text.len()];
+
+        for &pos in &positions {
+            let cursor = Cursor::new(&text, pos);
+            let state = cursor.state();
+            assert_eq!(state.is_valid(), cursor.get_leaf().is_some());
+
+            if state.is_valid() {
+                let restored = state.restore(&text).expect("state restore should succeed");
+                assert_eq!(restored.pos(), cursor.pos());
+                assert_eq!(restored.get_leaf().unwrap().1, cursor.get_leaf().unwrap().1);
+
+                let restored_state = restored.state();
+                assert_eq!(restored_state.position(), state.position());
+                assert_eq!(restored_state.offset_of_leaf(), state.offset_of_leaf());
+            } else {
+                assert!(state.restore(&text).is_none());
+            }
+
+            let descriptor_from_state = state.to_descriptor();
+            let state_from_descriptor = CursorState::from_descriptor(&descriptor_from_state);
+            assert_eq!(state_from_descriptor.position(), state.position());
+            assert_eq!(state_from_descriptor.offset_of_leaf(), state.offset_of_leaf());
+            assert_eq!(state_from_descriptor.is_valid(), state.is_valid());
+
+            let mut fresh = Cursor::new(&text, 0);
+            let applied = fresh.apply_descriptor(&descriptor_from_state);
+            if state.is_valid() {
+                assert!(applied, "descriptor generated from state should apply");
+                assert_eq!(fresh.pos(), cursor.pos());
+                assert_eq!(fresh.get_leaf().unwrap().1, cursor.get_leaf().unwrap().1);
+            } else {
+                assert!(!applied, "invalid state descriptor should not apply");
+            }
+
+            let via_from_cursor = CursorState::from_cursor(&cursor);
+            assert_eq!(via_from_cursor.position(), state.position());
+            assert_eq!(via_from_cursor.offset_of_leaf(), state.offset_of_leaf());
+            assert_eq!(via_from_cursor.is_valid(), state.is_valid());
+        }
+
+        let mut invalid_cursor = Cursor::new(&text, text.len());
+        assert!(invalid_cursor.next::<LinesMetric>().is_none());
+        let invalid_state = invalid_cursor.state();
+        assert!(!invalid_state.is_valid());
+        assert!(invalid_state.restore(&text).is_none());
+    }
+
+    #[test]
+    fn cursor_state_handles_deep_paths() {
+        let rope = build_deep_rope();
+        let mut cursor = Cursor::new(&rope, rope.len() / 2);
+
+        for _ in 0..8 {
+            let state = cursor.state();
+            assert!(state.is_valid());
+            assert!(state.frames().len() > 4, "expected full path depth cached");
+            let round_trip = state.restore(&rope).expect("restore should succeed");
+            assert_eq!(round_trip.pos(), cursor.pos());
+            assert_eq!(round_trip.get_leaf().unwrap().1, cursor.get_leaf().unwrap().1);
+
+            if cursor.next_leaf().is_none() {
+                break;
+            }
+        }
+    }
+
+    #[test]
+    fn cursor_state_invalidates_after_edit() {
+        let text = Rope::from("abcdefghij");
+        let cursor = Cursor::new(&text, 3);
+        let state = cursor.state();
+        assert!(state.is_valid());
+
+        let rebuilt = Rope::from("abcdefghijk");
+        assert!(state.restore(&rebuilt).is_none(), "restore should fail on rebuilt tree");
+
+        let descriptor = state.to_descriptor();
+        let mut fallback = Cursor::new(&rebuilt, 0);
+        let before = fallback.get_leaf().unwrap();
+        assert!(!fallback.apply_descriptor(&descriptor));
+        let after = fallback.get_leaf().unwrap();
+        assert_eq!(after.0 as *const String, before.0 as *const String);
+        assert_eq!(after.1, before.1);
+        assert_eq!(fallback.pos(), 0);
+
+        let state_from_descriptor = CursorState::from_descriptor(&descriptor);
+        assert_eq!(state_from_descriptor.is_valid(), state.is_valid());
+    }
+}
