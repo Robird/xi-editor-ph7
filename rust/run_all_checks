@@ -1,5 +1,19 @@
 #!/bin/bash
 
+# Cargo emits build scripts inside the workspace. On WSL/DrvFs those paths often
+# live on NTFS, and the hard-link strategy used during build script promotion
+# can fail with intermittent ENOENT. When we detect a WSL kernel and no explicit
+# CARGO_TARGET_DIR, redirect the target directory to an ext4-backed location
+# under $HOME (overridable via RUN_ALL_CHECKS_TARGET_DIR) to avoid those errors.
+if [[ -z "${CARGO_TARGET_DIR:-}" ]]; then
+    kernel_release=$(uname -r 2>/dev/null || true)
+    if [[ "$kernel_release" == *Microsoft* ]] || [[ "$kernel_release" == *microsoft* ]]; then
+        export CARGO_TARGET_DIR="${RUN_ALL_CHECKS_TARGET_DIR:-$HOME/.cache/xi-editor-ph7/target}"
+        mkdir -p "$CARGO_TARGET_DIR"
+        printf 'Detected WSL kernel; using CARGO_TARGET_DIR=%s for builds.\n' "$CARGO_TARGET_DIR"
+    fi
+fi
+
 if !(cargo clippy --version); then
     printf 'Checks requires clippy; try `rustup component add clippy-preview`.\n'
     printf "If that doesn't fix things; try `rustup self update`.\n"
