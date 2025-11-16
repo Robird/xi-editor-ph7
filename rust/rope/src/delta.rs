@@ -57,8 +57,13 @@ impl<N: NodeInfo<L>, L: Leaf> Delta<N, L> {
     }
 
     #[cfg_attr(not(feature = "serde"), allow(dead_code))]
-    pub(crate) fn element_count(&self) -> usize {
+    pub fn element_count(&self) -> usize {
         self.els.len()
+    }
+
+    /// Exposes the raw delta elements for read-only iteration.
+    pub fn elements(&self) -> &[DeltaElement<N, L>] {
+        &self.els
     }
 
     #[cfg_attr(not(feature = "serde"), allow(dead_code))]

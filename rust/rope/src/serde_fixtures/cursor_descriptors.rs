@@ -80,19 +80,19 @@ pub fn export_cursor_descriptor_fixtures(
 }
 
 pub fn cursor_descriptor_samples() -> Vec<CursorDescriptorFixture> {
-    let mut fixtures = Vec::with_capacity(11);
-    fixtures.push(sample_empty_base());
-    fixtures.push(sample_single_leaf_midpoint());
-    fixtures.push(sample_single_leaf_end());
-    fixtures.push(sample_lines_middle());
-    fixtures.push(sample_lines_tail_boundary());
-    fixtures.push(sample_utf16_surrogate_midpoint());
-    fixtures.push(sample_utf16_cluster_tail());
-    fixtures.push(sample_split_leaf_boundary());
-    fixtures.push(sample_deep_tree_midpoint());
-    fixtures.push(sample_post_edit_invalidates());
-    fixtures.push(sample_invalid_descriptor());
-    fixtures
+    vec![
+        sample_empty_base(),
+        sample_single_leaf_midpoint(),
+        sample_single_leaf_end(),
+        sample_lines_middle(),
+        sample_lines_tail_boundary(),
+        sample_utf16_surrogate_midpoint(),
+        sample_utf16_cluster_tail(),
+        sample_split_leaf_boundary(),
+        sample_deep_tree_midpoint(),
+        sample_post_edit_invalidates(),
+        sample_invalid_descriptor(),
+    ]
 }
 
 fn sample_empty_base() -> CursorDescriptorFixture {
@@ -290,6 +290,7 @@ fn sample_invalid_descriptor() -> CursorDescriptorFixture {
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn fixture_from_descriptor(
     name: &str,
     rope: &Rope,

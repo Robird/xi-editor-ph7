@@ -24,15 +24,15 @@
 //! Our wrapper provides a few useful features:
 //!
 //! - All `watch` calls are associated with a `WatchToken`; this
-//! allows for the same path to be watched multiple times,
-//! presumably by multiple interested parties. events are delivered
-//! once-per token.
+//!   allows for the same path to be watched multiple times,
+//!   presumably by multiple interested parties. events are delivered
+//!   once-per token.
 //!
 //! - There is the option (via `FileWatcher::watch_filtered`) to include
-//! a predicate along with a path, to filter paths before delivery.
+//!   a predicate along with a path, to filter paths before delivery.
 //!
 //! - We are integrated with the xi_rpc runloop; events are queued as
-//! they arrive, and an idle task is scheduled.
+//!   they arrive, and an idle task is scheduled.
 
 use crossbeam_channel::unbounded;
 use notify::{event::*, watcher, RecommendedWatcher, RecursiveMode, Watcher};

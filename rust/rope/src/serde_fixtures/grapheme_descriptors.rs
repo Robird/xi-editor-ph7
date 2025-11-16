@@ -106,8 +106,8 @@ fn build_grapheme_descriptors(samples: &[GraphemeSample]) -> Vec<GraphemeDescrip
     let mut descriptors = Vec::new();
     for sample in samples {
         let rope_text = String::from(&sample.rope);
-        let mut cluster_index = 0usize;
-        for (byte_offset, cluster) in rope_text.grapheme_indices(true) {
+        for (cluster_index, (byte_offset, cluster)) in rope_text.grapheme_indices(true).enumerate()
+        {
             if cluster_index >= sample.max_clusters {
                 break;
             }
@@ -123,7 +123,6 @@ fn build_grapheme_descriptors(samples: &[GraphemeSample]) -> Vec<GraphemeDescrip
                 &rope_text,
             );
             descriptors.push(descriptor);
-            cluster_index += 1;
         }
     }
     descriptors
@@ -145,7 +144,7 @@ fn snapshot_grapheme(
     };
     let scalar_count = cluster_text.chars().count();
     let contains_zwj = cluster_text.contains('\u{200D}');
-    let is_ascii = cluster_text.chars().all(|c| c.is_ascii());
+    let is_ascii = cluster_text.is_ascii();
     let leaf = capture_leaf_snapshot(rope, start);
     let leaf_len = leaf.range.end.saturating_sub(leaf.range.start);
     let start_in_leaf = start.saturating_sub(leaf.range.start);
@@ -311,13 +310,13 @@ fn flag_leaf_left() -> String {
     }
     let target_len = (MIN_LEAF + 16).min(MAX_LEAF - 32);
     payload.truncate(target_len);
-    payload.push_str("\u{1F1FA}");
+    payload.push('\u{1F1FA}');
     payload
 }
 
 fn flag_leaf_right() -> String {
     let mut payload = String::new();
-    payload.push_str("\u{1F1F8}");
+    payload.push('\u{1F1F8}');
     while payload.len() < MIN_LEAF + 12 {
         payload.push_str("-flag-right");
     }

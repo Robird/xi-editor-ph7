@@ -421,7 +421,9 @@ impl ToAnnotation for Find {
             })
             .collect::<Vec<AnnotationRange>>();
 
-        let payload = std::iter::repeat_n(json!({"id": self.id}), ranges.len()).collect::<Vec<_>>();
+        let payload = std::iter::repeat_with(|| json!({"id": self.id}))
+            .take(ranges.len())
+            .collect::<Vec<_>>();
 
         AnnotationSlice::new(AnnotationType::Find, ranges, Some(payload))
     }

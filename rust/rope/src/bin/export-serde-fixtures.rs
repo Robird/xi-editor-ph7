@@ -37,33 +37,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--dir" | "--output-dir" => {
-                let value = args
-                    .next()
-                    .ok_or_else(|| "--dir requires a value specifying the output directory")?;
+                let value =
+                    args.next().ok_or("--dir requires a value specifying the output directory")?;
                 output_dir = Some(PathBuf::from(value));
             }
             "--tree-builder-trace" | "--tree-builder-dir" => {
-                let value = args.next().ok_or_else(|| {
-                    "--tree-builder-trace requires a value specifying the output directory"
-                })?;
+                let value = args.next().ok_or(
+                    "--tree-builder-trace requires a value specifying the output directory",
+                )?;
                 trace_dir = Some(PathBuf::from(value));
             }
             "--cursor-descriptors" => {
-                let value = args.next().ok_or_else(|| {
-                    "--cursor-descriptors requires a value specifying the output directory"
-                })?;
+                let value = args.next().ok_or(
+                    "--cursor-descriptors requires a value specifying the output directory",
+                )?;
                 cursor_dir = Some(PathBuf::from(value));
             }
             "--chunk-descriptors" => {
-                let value = args.next().ok_or_else(|| {
-                    "--chunk-descriptors requires a value specifying the output directory"
-                })?;
+                let value = args.next().ok_or(
+                    "--chunk-descriptors requires a value specifying the output directory",
+                )?;
                 chunk_dir = Some(PathBuf::from(value));
             }
             "--grapheme-descriptors" => {
-                let value = args.next().ok_or_else(|| {
-                    "--grapheme-descriptors requires a value specifying the output directory"
-                })?;
+                let value = args.next().ok_or(
+                    "--grapheme-descriptors requires a value specifying the output directory",
+                )?;
                 grapheme_dir = Some(PathBuf::from(value));
             }
             "--list" => {

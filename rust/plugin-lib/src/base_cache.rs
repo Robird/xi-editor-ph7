@@ -364,8 +364,7 @@ impl ChunkCache {
             let split_idx = self
                 .line_offsets
                 .binary_search(&new_offsets[0])
-                .err()
-                .expect("new index cannot be occupied");
+                .expect_err("new index cannot be occupied");
 
             self.line_offsets =
                 [&self.line_offsets[..split_idx], &new_offsets, &self.line_offsets[split_idx..]]
@@ -409,7 +408,7 @@ impl ChunkCache {
         let mut del_before: usize = 0;
         let mut ins_before: usize = 0;
 
-        for op in delta.els.as_slice() {
+        for op in delta.elements() {
             match *op {
                 DeltaElement::Copy(start, end) => {
                     if start < chunk_start {
@@ -508,7 +507,7 @@ mod tests {
         assert_eq!(c.offset, 0);
 
         let d = Delta::simple_edit(Interval::new(2, 2), "_oops_".into(), c.contents.len());
-        assert_eq!(d.els.len(), 3);
+        assert_eq!(d.element_count(), 3);
         c.update(Some(&d), d.new_document_len(), 1, 3);
 
         assert_eq!(&c.contents, "ah_oops_hyayoh");

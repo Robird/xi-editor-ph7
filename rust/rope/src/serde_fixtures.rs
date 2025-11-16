@@ -3,8 +3,6 @@
 //! These constants centralise the golden JSON payloads used by tests and
 //! external tooling so that they remain a single source of truth.
 
-#![cfg(feature = "serde")]
-
 pub mod chunk_descriptors;
 pub mod cursor_descriptors;
 pub mod grapheme_descriptors;

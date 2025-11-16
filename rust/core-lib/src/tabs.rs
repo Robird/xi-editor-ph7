@@ -774,7 +774,7 @@ impl CoreState {
         use notify::event::*;
         match event.kind {
             EventKind::Create(CreateKind::Any) | EventKind::Modify(ModifyKind::Any) => {
-                self.plugins.load_from_paths(&[event.paths[0].clone()]);
+                self.plugins.load_from_paths(std::slice::from_ref(&event.paths[0]));
                 if let Some(plugin) = self.plugins.get_from_path(&event.paths[0]) {
                     self.do_start_plugin(ViewId(0), &plugin.name);
                 }
@@ -795,7 +795,7 @@ impl CoreState {
                     self.plugins.remove_named(&old_plugin.name);
                 }
 
-                self.plugins.load_from_paths(&[new.clone()]);
+                self.plugins.load_from_paths(std::slice::from_ref(new));
                 if let Some(new_plugin) = self.plugins.get_from_path(new) {
                     self.do_start_plugin(ViewId(0), &new_plugin.name);
                 }

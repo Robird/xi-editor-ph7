@@ -314,7 +314,7 @@ impl<'a> EventContext<'a> {
         let new_len = delta.new_document_len();
         let nb_lines = ed.get_buffer().measure::<LinesMetric>() + 1;
         // don't send the actual delta if it is too large, by some heuristic
-        let approx_size = delta.inserts_len() + (delta.els.len() * 10);
+        let approx_size = delta.inserts_len() + (delta.element_count() * 10);
         let delta = if approx_size > MAX_SIZE_LIMIT { None } else { Some(delta) };
 
         let undo_group = ed.get_active_undo_group();

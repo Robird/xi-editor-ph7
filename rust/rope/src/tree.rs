@@ -758,8 +758,7 @@ impl<N: NodeInfo<L>, L: Leaf> TreeBuilder<N, L> {
                     } else {
                         let mut last = self.stack.last_mut().unwrap().pop().unwrap();
                         let existing_len = last.get_children().len();
-                        let new_children: Vec<Node<N, L>> =
-                            n.get_children().iter().cloned().collect();
+                        let new_children: Vec<Node<N, L>> = n.get_children().to_vec();
                         let total_children = existing_len + new_children.len();
                         if total_children <= MAX_CHILDREN {
                             last.shared_mut()
@@ -770,8 +769,7 @@ impl<N: NodeInfo<L>, L: Leaf> TreeBuilder<N, L> {
                             }
                         } else {
                             // Note: this leans left. Splitting at midpoint is also an option
-                            let mut combined: Vec<Node<N, L>> =
-                                last.get_children().iter().cloned().collect();
+                            let mut combined: Vec<Node<N, L>> = last.get_children().to_vec();
                             combined.extend(new_children);
                             let splitpoint = min(MAX_CHILDREN, total_children - MIN_CHILDREN);
                             let left_nodes = combined[..splitpoint].to_vec();
@@ -1823,10 +1821,13 @@ impl<N: NodeInfo<L>, L: Leaf> CursorState<N, L> {
     }
 }
 
+type CursorDescriptorComponents<N, L> =
+    (SmallVec<[PathFrame<N, L>; CURSOR_CACHE_SIZE]>, Arc<NodeBody<N, L>>, usize, usize);
+
 fn build_descriptor_components<N: NodeInfo<L>, L: Leaf>(
     root: &Node<N, L>,
     position: usize,
-) -> (SmallVec<[PathFrame<N, L>; CURSOR_CACHE_SIZE]>, Arc<NodeBody<N, L>>, usize, usize) {
+) -> CursorDescriptorComponents<N, L> {
     let mut frames: SmallVec<[PathFrame<N, L>; CURSOR_CACHE_SIZE]> = SmallVec::new();
     let mut node = root;
     let clamped_position = position.min(root.len());

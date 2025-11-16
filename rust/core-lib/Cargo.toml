@@ -47,4 +47,4 @@ tempdir = "^0.3.4"
 ledger = []
 trace = ["xi-trace"]
 serde = ["xi-rope/serde"]
-default = ["notify", "trace"]
+default = ["notify", "trace", "serde"]

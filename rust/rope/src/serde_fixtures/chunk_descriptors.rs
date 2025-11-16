@@ -155,15 +155,10 @@ pub fn chunk_descriptor_fixtures() -> ChunkDescriptorFile {
 fn build_chunk_descriptors(samples: &[RopeFixtureSample]) -> Vec<ChunkDescriptor> {
     let mut descriptors = Vec::new();
     for sample in samples {
-        let mut chunk_iter = sample.rope.iter_chunks(..);
         let mut cursor = Cursor::new(&sample.rope, 0);
         let mut absolute_start = 0usize;
         let mut chunk_index = 0usize;
-        let mut recorded = 0usize;
-        while let Some(chunk) = chunk_iter.next() {
-            if recorded >= sample.max_chunks {
-                break;
-            }
+        for chunk in sample.rope.iter_chunks(..).take(sample.max_chunks) {
             let text = chunk.to_string();
             cursor.set(absolute_start);
             let descriptor =
@@ -171,10 +166,9 @@ fn build_chunk_descriptors(samples: &[RopeFixtureSample]) -> Vec<ChunkDescriptor
             descriptors.push(descriptor);
             absolute_start += text.len();
             chunk_index += 1;
-            recorded += 1;
             let _ = cursor.next_leaf();
         }
-        if chunk_index == 0 && sample.rope.len() == 0 {
+        if chunk_index == 0 && sample.rope.is_empty() {
             descriptors.push(empty_chunk_descriptor(sample));
         }
     }
