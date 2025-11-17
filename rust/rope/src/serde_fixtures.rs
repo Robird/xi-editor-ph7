@@ -3,9 +3,13 @@
 //! These constants centralise the golden JSON payloads used by tests and
 //! external tooling so that they remain a single source of truth.
 
+pub mod breaks_descriptors;
 pub mod chunk_descriptors;
 pub mod cursor_descriptors;
+pub mod diff_regions;
 pub mod grapheme_descriptors;
+pub mod search_spans;
+pub mod snapshots;
 
 pub use cursor_descriptors::{
     cursor_descriptor_samples, export_cursor_descriptor_fixtures, CursorDescriptorExportReport,
@@ -15,14 +19,30 @@ pub use cursor_descriptors::{
 
 pub use chunk_descriptors::{
     chunk_descriptor_fixtures, export_chunk_descriptors, ChunkDescriptor,
-    ChunkDescriptorExportReport, ChunkDescriptorFile, LineDescriptor, RangeSnapshot,
-    CHUNK_DESCRIPTOR_FILENAME,
+    ChunkDescriptorExportReport, ChunkDescriptorFile, LineDescriptor, CHUNK_DESCRIPTOR_FILENAME,
 };
 
 pub use grapheme_descriptors::{
     export_grapheme_descriptors, grapheme_descriptor_fixtures, GraphemeDescriptor,
     GraphemeDescriptorExportReport, GraphemeDescriptorFile, GRAPHEME_DESCRIPTOR_FILENAME,
 };
+
+pub use breaks_descriptors::{
+    export_breaks_descriptors, BreakMetricKind, BreakSetDescriptor, BreaksDescriptorExportReport,
+    BreaksDescriptorFile, BREAKS_DESCRIPTOR_FILENAME,
+};
+
+pub use diff_regions::{
+    export_diff_regions, DiffCase, DiffOpKind, DiffOpSnapshot, DiffRegionsExportReport,
+    DiffRegionsFile, DIFF_REGIONS_FILENAME,
+};
+
+pub use search_spans::{
+    export_search_spans, CaseMatchingSnapshot, SearchCaseSnapshot, SearchHitSnapshot,
+    SearchSpansExportReport, SearchSpansFile, SpanSegmentSnapshot, SEARCH_SPANS_FILENAME,
+};
+
+pub use snapshots::{frames_from_descriptor, PathFrameSnapshot, RangeSnapshot};
 
 /// Describes a single serde regression fixture.
 #[derive(Copy, Clone, Debug)]

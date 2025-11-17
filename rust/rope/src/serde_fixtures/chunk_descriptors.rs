@@ -6,9 +6,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::helpers::string_leaf::{MAX_LEAF, MIN_LEAF};
 use crate::rope::Rope;
-use crate::tree::{Cursor, CursorDescriptor, TreeBuilder};
+use crate::tree::{Cursor, TreeBuilder};
 
 use super::detect_git_commit;
+use super::snapshots::{frames_from_descriptor, PathFrameSnapshot, RangeSnapshot};
 use crate::rope::RopeInfo;
 
 pub const CHUNK_DESCRIPTOR_FILENAME: &str = "chunk_descriptors.json";
@@ -57,20 +58,6 @@ pub struct LineDescriptor {
     pub utf16_range: RangeSnapshot,
     pub newline_kind: LineEndingKind,
     pub tags: Vec<String>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RangeSnapshot {
-    pub start: usize,
-    pub end: usize,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PathFrameSnapshot {
-    pub node_height: usize,
-    pub node_len: usize,
-    pub child_index: usize,
-    pub child_offset: usize,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -278,21 +265,6 @@ fn empty_chunk_descriptor(sample: &RopeFixtureSample) -> ChunkDescriptor {
         path: Vec::new(),
         context: ChunkContext { before: String::new(), after: String::new() },
     }
-}
-
-fn frames_from_descriptor(
-    descriptor: &CursorDescriptor<RopeInfo, String>,
-) -> Vec<PathFrameSnapshot> {
-    descriptor
-        .frames()
-        .iter()
-        .map(|frame| PathFrameSnapshot {
-            node_height: frame.node_height(),
-            node_len: frame.node_len(),
-            child_index: frame.child_index(),
-            child_offset: frame.child_offset(),
-        })
-        .collect()
 }
 
 fn compose_chunk_tags(base: &[&str], chunk_text: &str) -> Vec<String> {

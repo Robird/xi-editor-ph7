@@ -5,11 +5,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::helpers::string_leaf::{MAX_LEAF, MIN_LEAF};
 use crate::rope::Rope;
-use crate::tree::{Cursor, CursorDescriptor, TreeBuilder};
+use crate::tree::{Cursor, TreeBuilder};
 use unicode_segmentation::UnicodeSegmentation;
 
-use super::chunk_descriptors::{PathFrameSnapshot, RangeSnapshot};
 use super::detect_git_commit;
+use super::snapshots::{frames_from_descriptor, PathFrameSnapshot, RangeSnapshot};
 use crate::rope::RopeInfo;
 
 pub const GRAPHEME_DESCRIPTOR_FILENAME: &str = "grapheme_descriptors.json";
@@ -205,21 +205,6 @@ fn clamp_next_boundary_in_text(text: &str, offset: usize) -> usize {
         idx += 1;
     }
     idx
-}
-
-fn frames_from_descriptor(
-    descriptor: &CursorDescriptor<RopeInfo, String>,
-) -> Vec<PathFrameSnapshot> {
-    descriptor
-        .frames()
-        .iter()
-        .map(|frame| PathFrameSnapshot {
-            node_height: frame.node_height(),
-            node_len: frame.node_len(),
-            child_index: frame.child_index(),
-            child_offset: frame.child_offset(),
-        })
-        .collect()
 }
 
 fn infer_fallback(contains_zwj: bool, crosses_leaf: bool, cluster_text: &str) -> bool {

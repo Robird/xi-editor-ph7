@@ -21,9 +21,12 @@ use sha2::{Digest, Sha256};
 
 #[cfg(feature = "serde")]
 use xi_rope::serde_fixtures::{
-    export_chunk_descriptors, export_cursor_descriptor_fixtures, export_grapheme_descriptors,
-    fixtures, ChunkDescriptorExportReport, Fixture, GraphemeDescriptorExportReport,
-    CHUNK_DESCRIPTOR_FILENAME, CURSOR_DESCRIPTOR_FILENAME, GRAPHEME_DESCRIPTOR_FILENAME,
+    export_breaks_descriptors, export_chunk_descriptors, export_cursor_descriptor_fixtures,
+    export_diff_regions, export_grapheme_descriptors, export_search_spans, fixtures,
+    BreaksDescriptorExportReport, ChunkDescriptorExportReport, DiffRegionsExportReport, Fixture,
+    GraphemeDescriptorExportReport, SearchSpansExportReport, BREAKS_DESCRIPTOR_FILENAME,
+    CHUNK_DESCRIPTOR_FILENAME, CURSOR_DESCRIPTOR_FILENAME, DIFF_REGIONS_FILENAME,
+    GRAPHEME_DESCRIPTOR_FILENAME, SEARCH_SPANS_FILENAME,
 };
 
 #[cfg(feature = "serde")]
@@ -41,6 +44,12 @@ const CURSOR_SCHEMA_HASH: &str = "cursor_descriptors@1.1.0";
 const CHUNK_SCHEMA_HASH: &str = "chunk_descriptors@1.0.0";
 #[cfg(feature = "serde")]
 const GRAPHEME_SCHEMA_HASH: &str = "grapheme_descriptors@1.0.0";
+#[cfg(feature = "serde")]
+const BREAKS_SCHEMA_HASH: &str = "breaks_descriptors@1.0.0";
+#[cfg(feature = "serde")]
+const DIFF_REGIONS_SCHEMA_HASH: &str = "diff_regions@1.0.0";
+#[cfg(feature = "serde")]
+const SEARCH_SPANS_SCHEMA_HASH: &str = "search_spans@1.0.0";
 #[cfg(feature = "serde")]
 const TREE_BUILDER_TRACE_SCHEMA_HASH: &str = "tree_builder_slice_trace@1.0.0";
 
@@ -93,6 +102,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut cursor_dir: Option<PathBuf> = None;
     let mut chunk_dir: Option<PathBuf> = None;
     let mut grapheme_dir: Option<PathBuf> = None;
+    let mut breaks_dir: Option<PathBuf> = None;
+    let mut diff_dir: Option<PathBuf> = None;
+    let mut search_dir: Option<PathBuf> = None;
     let mut manifest_path: Option<PathBuf> = Some(default_manifest_path());
     let mut manifest_entries: Vec<ManifestFixture> = Vec::new();
 
@@ -127,6 +139,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )?;
                 grapheme_dir = Some(PathBuf::from(value));
             }
+            "--breaks-descriptors" => {
+                let value = args.next().ok_or(
+                    "--breaks-descriptors requires a value specifying the output directory",
+                )?;
+                breaks_dir = Some(PathBuf::from(value));
+            }
+            "--diff-regions" => {
+                let value = args
+                    .next()
+                    .ok_or("--diff-regions requires a value specifying the output directory")?;
+                diff_dir = Some(PathBuf::from(value));
+            }
+            "--search-spans" => {
+                let value = args
+                    .next()
+                    .ok_or("--search-spans requires a value specifying the output directory")?;
+                search_dir = Some(PathBuf::from(value));
+            }
             "--emit-manifest" => {
                 let value = args
                     .next()
@@ -152,10 +182,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         && cursor_dir.is_none()
         && chunk_dir.is_none()
         && grapheme_dir.is_none()
+        && breaks_dir.is_none()
+        && diff_dir.is_none()
+        && search_dir.is_none()
     {
         print_usage();
         return Err(
-            "missing required --dir <PATH>, --tree-builder-trace <PATH>, --cursor-descriptors <PATH>, --chunk-descriptors <PATH>, or --grapheme-descriptors <PATH> argument"
+            "missing required --dir <PATH>, --tree-builder-trace <PATH>, --cursor-descriptors <PATH>, --chunk-descriptors <PATH>, --grapheme-descriptors <PATH>, --breaks-descriptors <PATH>, --diff-regions <PATH>, or --search-spans <PATH> argument"
                 .into(),
         );
     }
@@ -230,6 +263,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
+    if let Some(dir) = breaks_dir {
+        let report = export_breaks_descriptors(dir.as_path())?;
+        report_breaks_export(&report);
+        let payload_hash = compute_payload_hash(report.file_path.as_path())?;
+        manifest_entries.push(ManifestFixture {
+            name: BREAKS_DESCRIPTOR_FILENAME.to_string(),
+            path: manifest_display_path(report.file_path.as_path()),
+            count: report.descriptor_count,
+            schema_hash: BREAKS_SCHEMA_HASH.to_string(),
+            payload_hash,
+        });
+    }
+
+    if let Some(dir) = diff_dir {
+        let report = export_diff_regions(dir.as_path())?;
+        report_diff_export(&report);
+        let payload_hash = compute_payload_hash(report.file_path.as_path())?;
+        manifest_entries.push(ManifestFixture {
+            name: DIFF_REGIONS_FILENAME.to_string(),
+            path: manifest_display_path(report.file_path.as_path()),
+            count: report.case_count,
+            schema_hash: DIFF_REGIONS_SCHEMA_HASH.to_string(),
+            payload_hash,
+        });
+    }
+
+    if let Some(dir) = search_dir {
+        let report = export_search_spans(dir.as_path())?;
+        report_search_export(&report);
+        let payload_hash = compute_payload_hash(report.file_path.as_path())?;
+        manifest_entries.push(ManifestFixture {
+            name: SEARCH_SPANS_FILENAME.to_string(),
+            path: manifest_display_path(report.file_path.as_path()),
+            count: report.case_count,
+            schema_hash: SEARCH_SPANS_SCHEMA_HASH.to_string(),
+            payload_hash,
+        });
+    }
+
     if let Some(path) = manifest_path {
         if !manifest_entries.is_empty() {
             manifest_entries.sort_by(|a, b| a.name.cmp(&b.name));
@@ -243,7 +315,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(feature = "serde")]
 fn print_usage() {
     eprintln!(
-        "Usage: cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --dir <PATH> [--tree-builder-trace <PATH>] [--cursor-descriptors <PATH>] [--chunk-descriptors <PATH>] [--grapheme-descriptors <PATH>] [--emit-manifest <PATH>]\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --tree-builder-trace <PATH>\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --cursor-descriptors <PATH>\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --chunk-descriptors <PATH>\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --grapheme-descriptors <PATH>\n        cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --list"
+        "Usage: cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --dir <PATH> [--tree-builder-trace <PATH>] [--cursor-descriptors <PATH>] [--chunk-descriptors <PATH>] [--grapheme-descriptors <PATH>] [--breaks-descriptors <PATH>] [--diff-regions <PATH>] [--search-spans <PATH>] [--emit-manifest <PATH>]\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --tree-builder-trace <PATH>\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --cursor-descriptors <PATH>\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --chunk-descriptors <PATH>\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --grapheme-descriptors <PATH>\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --breaks-descriptors <PATH>\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --diff-regions <PATH>\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --search-spans <PATH>\n        cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --list"
     );
 }
 
@@ -304,6 +376,33 @@ fn report_grapheme_export(report: &GraphemeDescriptorExportReport) {
     println!(
         "exported {count} grapheme descriptors to {path}",
         count = report.descriptor_count,
+        path = report.file_path.display()
+    );
+}
+
+#[cfg(feature = "serde")]
+fn report_breaks_export(report: &BreaksDescriptorExportReport) {
+    println!(
+        "exported {count} breaks descriptor samples to {path}",
+        count = report.descriptor_count,
+        path = report.file_path.display()
+    );
+}
+
+#[cfg(feature = "serde")]
+fn report_diff_export(report: &DiffRegionsExportReport) {
+    println!(
+        "exported {count} diff regions to {path}",
+        count = report.case_count,
+        path = report.file_path.display()
+    );
+}
+
+#[cfg(feature = "serde")]
+fn report_search_export(report: &SearchSpansExportReport) {
+    println!(
+        "exported {count} search span cases to {path}",
+        count = report.case_count,
         path = report.file_path.display()
     );
 }
