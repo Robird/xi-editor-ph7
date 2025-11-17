@@ -41,6 +41,8 @@ const CURSOR_SCHEMA_HASH: &str = "cursor_descriptors@1.1.0";
 const CHUNK_SCHEMA_HASH: &str = "chunk_descriptors@1.0.0";
 #[cfg(feature = "serde")]
 const GRAPHEME_SCHEMA_HASH: &str = "grapheme_descriptors@1.0.0";
+#[cfg(feature = "serde")]
+const TREE_BUILDER_TRACE_SCHEMA_HASH: &str = "tree_builder_slice_trace@1.0.0";
 
 #[cfg(feature = "serde")]
 #[derive(Serialize)]
@@ -67,11 +69,21 @@ struct FixtureFileReport {
     path: PathBuf,
 }
 
+#[cfg(feature = "serde")]
+struct TreeBuilderTraceExportReport {
+    file_name: String,
+    file_path: PathBuf,
+    event_count: usize,
+}
+
 #[cfg(all(feature = "serde", feature = "tree_builder_slice_trace"))]
 use xi_rope::{
     tree::{TreeBuilder, TreeBuilderEvent, TreeBuilderEventKind, TreeBuilderTracer},
     Interval, Rope, RopeInfo,
 };
+
+#[cfg(all(feature = "serde", feature = "tree_builder_slice_trace"))]
+const TREE_BUILDER_TRACE_FILENAME: &str = "basic_slice_plan.json";
 
 #[cfg(feature = "serde")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -163,7 +175,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if let Some(dir) = trace_dir {
-        handle_tree_builder_trace(dir)?;
+        let report = handle_tree_builder_trace(dir)?;
+        report_tree_builder_trace_export(&report);
+        let payload_hash = compute_payload_hash(report.file_path.as_path())?;
+        manifest_entries.push(ManifestFixture {
+            name: report.file_name.clone(),
+            path: manifest_display_path(report.file_path.as_path()),
+            count: report.event_count,
+            schema_hash: TREE_BUILDER_TRACE_SCHEMA_HASH.to_string(),
+            payload_hash,
+        });
     }
 
     if let Some(dir) = cursor_dir {
@@ -255,8 +276,17 @@ fn export_to_directory(
 }
 
 #[cfg(all(feature = "serde", feature = "tree_builder_slice_trace"))]
-fn handle_tree_builder_trace(dir: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+fn handle_tree_builder_trace(
+    dir: PathBuf,
+) -> Result<TreeBuilderTraceExportReport, Box<dyn std::error::Error>> {
     export_tree_builder_trace(dir.as_path())
+}
+
+#[cfg(all(feature = "serde", not(feature = "tree_builder_slice_trace")))]
+fn handle_tree_builder_trace(
+    _dir: PathBuf,
+) -> Result<TreeBuilderTraceExportReport, Box<dyn std::error::Error>> {
+    Err("--tree-builder-trace requires the `tree_builder_slice_trace` feature to be enabled".into())
 }
 
 #[cfg(feature = "serde")]
@@ -274,6 +304,15 @@ fn report_grapheme_export(report: &GraphemeDescriptorExportReport) {
     println!(
         "exported {count} grapheme descriptors to {path}",
         count = report.descriptor_count,
+        path = report.file_path.display()
+    );
+}
+
+#[cfg(feature = "serde")]
+fn report_tree_builder_trace_export(report: &TreeBuilderTraceExportReport) {
+    println!(
+        "exported {count} tree builder slice trace events to {path}",
+        count = report.event_count,
         path = report.file_path.display()
     );
 }
@@ -426,13 +465,10 @@ fn default_manifest_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(DEFAULT_MANIFEST_RELATIVE)
 }
 
-#[cfg(all(feature = "serde", not(feature = "tree_builder_slice_trace")))]
-fn handle_tree_builder_trace(_dir: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
-    Err("--tree-builder-trace requires the `tree_builder_slice_trace` feature to be enabled".into())
-}
-
 #[cfg(all(feature = "serde", feature = "tree_builder_slice_trace"))]
-fn export_tree_builder_trace(dir: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+fn export_tree_builder_trace(
+    dir: &std::path::Path,
+) -> Result<TreeBuilderTraceExportReport, Box<dyn std::error::Error>> {
     let events_store = Rc::new(RefCell::new(Vec::new()));
     let tracer = RecordingTracer::new(events_store.clone());
     let mut builder = TreeBuilder::<RopeInfo, String>::with_tracer(Box::new(tracer));
@@ -448,15 +484,20 @@ fn export_tree_builder_trace(dir: &std::path::Path) -> Result<(), Box<dyn std::e
 
     let serializable_events = convert_events(&events);
 
+    let event_count = serializable_events.len();
     std::fs::create_dir_all(dir)?;
-    let path = dir.join("basic_slice_plan.json");
+    let path = dir.join(TREE_BUILDER_TRACE_FILENAME);
     let mut json = serde_json::to_string_pretty(&serializable_events)?;
     if !json.ends_with('\n') {
         json.push('\n');
     }
-    std::fs::write(path, json)?;
+    std::fs::write(&path, json)?;
 
-    Ok(())
+    Ok(TreeBuilderTraceExportReport {
+        file_name: TREE_BUILDER_TRACE_FILENAME.to_string(),
+        file_path: path,
+        event_count,
+    })
 }
 
 #[cfg(all(feature = "serde", feature = "tree_builder_slice_trace"))]
