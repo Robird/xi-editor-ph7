@@ -95,12 +95,13 @@ pub fn export_chunk_descriptors(
     dir: &Path,
 ) -> Result<ChunkDescriptorExportReport, Box<dyn std::error::Error>> {
     std::fs::create_dir_all(dir)?;
-    let payload = chunk_descriptor_fixtures();
+    let path = dir.join(CHUNK_DESCRIPTOR_FILENAME);
+    let existing_timestamp = read_existing_generated_at(&path);
+    let payload = chunk_descriptor_fixtures(existing_timestamp);
     let mut json = serde_json::to_string_pretty(&payload)?;
     if !json.ends_with('\n') {
         json.push('\n');
     }
-    let path = dir.join(CHUNK_DESCRIPTOR_FILENAME);
     std::fs::write(&path, json)?;
     Ok(ChunkDescriptorExportReport {
         file_path: path,
@@ -124,14 +125,14 @@ fn clamp_prev_boundary(rope: &Rope, offset: usize) -> usize {
 fn clamp_next_boundary(rope: &Rope, offset: usize) -> usize {
     rope.at_or_next_codepoint_boundary(offset).unwrap_or_else(|| rope.len())
 }
-pub fn chunk_descriptor_fixtures() -> ChunkDescriptorFile {
+pub fn chunk_descriptor_fixtures(existing_timestamp: Option<u128>) -> ChunkDescriptorFile {
     let samples = chunk_samples();
     let chunk_descriptors = build_chunk_descriptors(&samples);
     let line_descriptors = build_line_descriptors(&samples);
     let metadata = ChunkDescriptorMetadata {
         schema_version: CHUNK_SCHEMA_VERSION.to_string(),
         rust_commit: detect_git_commit(),
-        generated_at_unix_millis: current_millis(),
+        generated_at_unix_millis: existing_timestamp.unwrap_or_else(current_millis),
         chunk_descriptor_count: chunk_descriptors.len(),
         line_descriptor_count: line_descriptors.len(),
     };
@@ -399,4 +400,16 @@ fn deep_leaf_payload(idx: usize) -> String {
     let start = payload.len().saturating_sub(marker.len());
     payload.replace_range(start..start + marker.len(), &marker);
     payload
+}
+
+fn read_existing_generated_at(path: &Path) -> Option<u128> {
+    #[derive(Deserialize)]
+    struct MetadataEnvelope {
+        metadata: ChunkDescriptorMetadata,
+    }
+
+    let contents = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str::<MetadataEnvelope>(&contents)
+        .map(|payload| payload.metadata.generated_at_unix_millis)
+        .ok()
 }

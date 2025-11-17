@@ -100,17 +100,20 @@ struct SearchSample {
 
 pub fn export_search_spans(dir: &Path) -> Result<SearchSpansExportReport, Box<dyn Error>> {
     std::fs::create_dir_all(dir)?;
-    let payload = build_search_payload()?;
+    let path = dir.join(SEARCH_SPANS_FILENAME);
+    let existing_timestamp = read_existing_generated_at(&path);
+    let payload = build_search_payload(existing_timestamp)?;
     let mut json = serde_json::to_string_pretty(&payload)?;
     if !json.ends_with('\n') {
         json.push('\n');
     }
-    let path = dir.join(SEARCH_SPANS_FILENAME);
     std::fs::write(&path, json)?;
     Ok(SearchSpansExportReport { file_path: path, case_count: payload.search_cases.len() })
 }
 
-fn build_search_payload() -> Result<SearchSpansFile, Box<dyn Error>> {
+fn build_search_payload(
+    existing_timestamp: Option<u128>,
+) -> Result<SearchSpansFile, Box<dyn Error>> {
     let cases = search_samples()
         .into_iter()
         .map(build_case_snapshot)
@@ -118,7 +121,7 @@ fn build_search_payload() -> Result<SearchSpansFile, Box<dyn Error>> {
     let metadata = SearchSpansMetadata {
         schema_version: SEARCH_SPANS_SCHEMA_VERSION.to_string(),
         rust_commit: detect_git_commit(),
-        generated_at_unix_millis: current_millis(),
+        generated_at_unix_millis: existing_timestamp.unwrap_or_else(current_millis),
         case_count: cases.len(),
     };
     Ok(SearchSpansFile { metadata, search_cases: cases })
@@ -275,4 +278,16 @@ fn context_after(text: &str, start: usize, limit: usize) -> String {
 
 fn current_millis() -> u128 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|dur| dur.as_millis()).unwrap_or_default()
+}
+
+fn read_existing_generated_at(path: &Path) -> Option<u128> {
+    #[derive(Deserialize)]
+    struct MetadataEnvelope {
+        metadata: SearchSpansMetadata,
+    }
+
+    let contents = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str::<MetadataEnvelope>(&contents)
+        .map(|payload| payload.metadata.generated_at_unix_millis)
+        .ok()
 }

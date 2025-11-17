@@ -77,12 +77,13 @@ pub fn export_grapheme_descriptors(
     dir: &Path,
 ) -> Result<GraphemeDescriptorExportReport, Box<dyn std::error::Error>> {
     std::fs::create_dir_all(dir)?;
-    let payload = grapheme_descriptor_fixtures();
+    let path = dir.join(GRAPHEME_DESCRIPTOR_FILENAME);
+    let existing_timestamp = read_existing_generated_at(&path);
+    let payload = grapheme_descriptor_fixtures(existing_timestamp);
     let mut json = serde_json::to_string_pretty(&payload)?;
     if !json.ends_with('\n') {
         json.push('\n');
     }
-    let path = dir.join(GRAPHEME_DESCRIPTOR_FILENAME);
     std::fs::write(&path, json)?;
     Ok(GraphemeDescriptorExportReport {
         file_path: path,
@@ -90,13 +91,13 @@ pub fn export_grapheme_descriptors(
     })
 }
 
-pub fn grapheme_descriptor_fixtures() -> GraphemeDescriptorFile {
+pub fn grapheme_descriptor_fixtures(existing_timestamp: Option<u128>) -> GraphemeDescriptorFile {
     let samples = grapheme_samples();
     let grapheme_descriptors = build_grapheme_descriptors(&samples);
     let metadata = GraphemeDescriptorMetadata {
         schema_version: GRAPHEME_SCHEMA_VERSION.to_string(),
         rust_commit: detect_git_commit(),
-        generated_at_unix_millis: current_millis(),
+        generated_at_unix_millis: existing_timestamp.unwrap_or_else(current_millis),
         descriptor_count: grapheme_descriptors.len(),
     };
     GraphemeDescriptorFile { metadata, grapheme_descriptors }
@@ -312,4 +313,16 @@ fn flag_leaf_right() -> String {
 
 fn current_millis() -> u128 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|dur| dur.as_millis()).unwrap_or_default()
+}
+
+fn read_existing_generated_at(path: &Path) -> Option<u128> {
+    #[derive(Deserialize)]
+    struct MetadataEnvelope {
+        metadata: GraphemeDescriptorMetadata,
+    }
+
+    let contents = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str::<MetadataEnvelope>(&contents)
+        .map(|payload| payload.metadata.generated_at_unix_millis)
+        .ok()
 }

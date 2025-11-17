@@ -75,23 +75,24 @@ pub fn export_breaks_descriptors(
     dir: &Path,
 ) -> Result<BreaksDescriptorExportReport, Box<dyn Error>> {
     std::fs::create_dir_all(dir)?;
-    let payload = build_breaks_descriptor_file();
+    let path = dir.join(BREAKS_DESCRIPTOR_FILENAME);
+    let existing_timestamp = read_existing_generated_at(&path);
+    let payload = build_breaks_descriptor_file(existing_timestamp);
     let mut json = serde_json::to_string_pretty(&payload)?;
     if !json.ends_with('\n') {
         json.push('\n');
     }
-    let path = dir.join(BREAKS_DESCRIPTOR_FILENAME);
     std::fs::write(&path, json)?;
     Ok(BreaksDescriptorExportReport { file_path: path, descriptor_count: payload.break_sets.len() })
 }
 
-fn build_breaks_descriptor_file() -> BreaksDescriptorFile {
+fn build_breaks_descriptor_file(existing_timestamp: Option<u128>) -> BreaksDescriptorFile {
     let samples = breaks_samples();
     let break_sets = samples.iter().map(build_break_set).collect::<Vec<_>>();
     let metadata = BreaksDescriptorMetadata {
         schema_version: BREAKS_SCHEMA_VERSION.to_string(),
         rust_commit: detect_git_commit(),
-        generated_at_unix_millis: current_millis(),
+        generated_at_unix_millis: existing_timestamp.unwrap_or_else(current_millis),
         descriptor_count: break_sets.len(),
     };
 
@@ -102,7 +103,7 @@ fn build_break_set(sample: &BreaksSample) -> BreakSetDescriptor {
     let rope = Rope::from(sample.text);
     let text = String::from(&rope);
     let mut break_offsets = greedy_break_offsets(&text, sample.wrap_width);
-    if rope.len() > 0 && break_offsets.is_empty() {
+    if !rope.is_empty() && break_offsets.is_empty() {
         break_offsets.push(rope.len());
     }
     let breaks = build_breaks_tree(rope.len(), &break_offsets);
@@ -296,4 +297,16 @@ fn truncate_codepoints(text: &str, limit: usize) -> String {
 
 fn current_millis() -> u128 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|dur| dur.as_millis()).unwrap_or_default()
+}
+
+fn read_existing_generated_at(path: &Path) -> Option<u128> {
+    #[derive(Deserialize)]
+    struct MetadataEnvelope {
+        metadata: BreaksDescriptorMetadata,
+    }
+
+    let contents = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str::<MetadataEnvelope>(&contents)
+        .map(|payload| payload.metadata.generated_at_unix_millis)
+        .ok()
 }

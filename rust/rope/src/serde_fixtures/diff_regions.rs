@@ -97,17 +97,21 @@ struct DiffSample {
 
 pub fn export_diff_regions(dir: &Path) -> Result<DiffRegionsExportReport, Box<dyn Error>> {
     std::fs::create_dir_all(dir)?;
-    let payload = build_diff_regions(dir)?;
+    let path = dir.join(DIFF_REGIONS_FILENAME);
+    let existing_timestamp = read_existing_generated_at(&path);
+    let payload = build_diff_regions(dir, existing_timestamp)?;
     let mut json = serde_json::to_string_pretty(&payload)?;
     if !json.ends_with('\n') {
         json.push('\n');
     }
-    let path = dir.join(DIFF_REGIONS_FILENAME);
     std::fs::write(&path, json)?;
     Ok(DiffRegionsExportReport { file_path: path, case_count: payload.diff_cases.len() })
 }
 
-fn build_diff_regions(dir: &Path) -> Result<DiffRegionsFile, Box<dyn Error>> {
+fn build_diff_regions(
+    dir: &Path,
+    existing_timestamp: Option<u128>,
+) -> Result<DiffRegionsFile, Box<dyn Error>> {
     let samples = diff_samples();
     let mut diff_cases = Vec::new();
     for sample in samples {
@@ -133,7 +137,7 @@ fn build_diff_regions(dir: &Path) -> Result<DiffRegionsFile, Box<dyn Error>> {
     let metadata = DiffRegionsMetadata {
         schema_version: DIFF_REGIONS_SCHEMA_VERSION.to_string(),
         rust_commit: detect_git_commit(),
-        generated_at_unix_millis: current_millis(),
+        generated_at_unix_millis: existing_timestamp.unwrap_or_else(current_millis),
         case_count: diff_cases.len(),
     };
     Ok(DiffRegionsFile { metadata, diff_cases })
@@ -389,4 +393,16 @@ fn current_millis() -> u128 {
 
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..")
+}
+
+fn read_existing_generated_at(path: &Path) -> Option<u128> {
+    #[derive(Deserialize)]
+    struct MetadataEnvelope {
+        metadata: DiffRegionsMetadata,
+    }
+
+    let contents = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str::<MetadataEnvelope>(&contents)
+        .map(|payload| payload.metadata.generated_at_unix_millis)
+        .ok()
 }
