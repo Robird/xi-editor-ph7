@@ -10,14 +10,62 @@ use std::{env, path::PathBuf};
 #[cfg(all(feature = "serde", feature = "tree_builder_slice_trace"))]
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-#[cfg(all(feature = "serde", feature = "tree_builder_slice_trace"))]
+#[cfg(feature = "serde")]
 use serde::Serialize;
+
+#[cfg(feature = "serde")]
+use serde_json::Value;
+
+#[cfg(feature = "serde")]
+use sha2::{Digest, Sha256};
 
 #[cfg(feature = "serde")]
 use xi_rope::serde_fixtures::{
     export_chunk_descriptors, export_cursor_descriptor_fixtures, export_grapheme_descriptors,
     fixtures, ChunkDescriptorExportReport, Fixture, GraphemeDescriptorExportReport,
+    CHUNK_DESCRIPTOR_FILENAME, CURSOR_DESCRIPTOR_FILENAME, GRAPHEME_DESCRIPTOR_FILENAME,
 };
+
+#[cfg(feature = "serde")]
+const DEFAULT_MANIFEST_RELATIVE: &str =
+    "../../../tests/xi.Core.Tests/Fixtures/fixtures.manifest.json";
+#[cfg(feature = "serde")]
+const SUBSET_SCHEMA_HASH: &str = "serde_fixtures::subset";
+#[cfg(feature = "serde")]
+const DELTA_SCHEMA_HASH: &str = "serde_fixtures::delta";
+#[cfg(feature = "serde")]
+const ENGINE_SCHEMA_HASH: &str = "serde_fixtures::engine";
+#[cfg(feature = "serde")]
+const CURSOR_SCHEMA_HASH: &str = "cursor_descriptors@1.1.0";
+#[cfg(feature = "serde")]
+const CHUNK_SCHEMA_HASH: &str = "chunk_descriptors@1.0.0";
+#[cfg(feature = "serde")]
+const GRAPHEME_SCHEMA_HASH: &str = "grapheme_descriptors@1.0.0";
+
+#[cfg(feature = "serde")]
+#[derive(Serialize)]
+struct FixtureManifest {
+    rust_commit: String,
+    cli_rev: String,
+    feature_gates: Vec<String>,
+    fixtures: Vec<ManifestFixture>,
+}
+
+#[cfg(feature = "serde")]
+#[derive(Serialize)]
+struct ManifestFixture {
+    name: String,
+    path: String,
+    count: usize,
+    schema_hash: String,
+    payload_hash: String,
+}
+
+#[cfg(feature = "serde")]
+struct FixtureFileReport {
+    name: String,
+    path: PathBuf,
+}
 
 #[cfg(all(feature = "serde", feature = "tree_builder_slice_trace"))]
 use xi_rope::{
@@ -33,6 +81,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut cursor_dir: Option<PathBuf> = None;
     let mut chunk_dir: Option<PathBuf> = None;
     let mut grapheme_dir: Option<PathBuf> = None;
+    let mut manifest_path: Option<PathBuf> = Some(default_manifest_path());
+    let mut manifest_entries: Vec<ManifestFixture> = Vec::new();
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -65,6 +115,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )?;
                 grapheme_dir = Some(PathBuf::from(value));
             }
+            "--emit-manifest" => {
+                let value = args
+                    .next()
+                    .ok_or("--emit-manifest requires a value specifying the manifest path")?;
+                manifest_path = Some(PathBuf::from(value));
+            }
             "--list" => {
                 list_fixtures();
                 return Ok(());
@@ -93,7 +149,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if let Some(dir) = output_dir {
-        export_to_directory(dir.as_path(), fixtures())?;
+        let reports = export_to_directory(dir.as_path(), fixtures())?;
+        for report in reports {
+            let payload_hash = compute_payload_hash(report.path.as_path())?;
+            manifest_entries.push(ManifestFixture {
+                name: report.name.clone(),
+                path: manifest_display_path(report.path.as_path()),
+                count: 1,
+                schema_hash: schema_hash_for_regression(&report.name),
+                payload_hash,
+            });
+        }
     }
 
     if let Some(dir) = trace_dir {
@@ -107,16 +173,47 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             count = report.sample_count,
             path = report.file_path.display()
         );
+        let payload_hash = compute_payload_hash(report.file_path.as_path())?;
+        manifest_entries.push(ManifestFixture {
+            name: CURSOR_DESCRIPTOR_FILENAME.to_string(),
+            path: manifest_display_path(report.file_path.as_path()),
+            count: report.sample_count,
+            schema_hash: CURSOR_SCHEMA_HASH.to_string(),
+            payload_hash,
+        });
     }
 
     if let Some(dir) = chunk_dir {
         let report = export_chunk_descriptors(dir.as_path())?;
         report_chunk_export(&report);
+        let payload_hash = compute_payload_hash(report.file_path.as_path())?;
+        manifest_entries.push(ManifestFixture {
+            name: CHUNK_DESCRIPTOR_FILENAME.to_string(),
+            path: manifest_display_path(report.file_path.as_path()),
+            count: report.chunk_count + report.line_count,
+            schema_hash: CHUNK_SCHEMA_HASH.to_string(),
+            payload_hash,
+        });
     }
 
     if let Some(dir) = grapheme_dir {
         let report = export_grapheme_descriptors(dir.as_path())?;
         report_grapheme_export(&report);
+        let payload_hash = compute_payload_hash(report.file_path.as_path())?;
+        manifest_entries.push(ManifestFixture {
+            name: GRAPHEME_DESCRIPTOR_FILENAME.to_string(),
+            path: manifest_display_path(report.file_path.as_path()),
+            count: report.descriptor_count,
+            schema_hash: GRAPHEME_SCHEMA_HASH.to_string(),
+            payload_hash,
+        });
+    }
+
+    if let Some(path) = manifest_path {
+        if !manifest_entries.is_empty() {
+            manifest_entries.sort_by(|a, b| a.name.cmp(&b.name));
+            write_manifest(path.as_path(), manifest_entries)?;
+        }
     }
 
     Ok(())
@@ -125,7 +222,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(feature = "serde")]
 fn print_usage() {
     eprintln!(
-        "Usage: cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --dir <PATH> [--tree-builder-trace <PATH>] [--cursor-descriptors <PATH>] [--chunk-descriptors <PATH>] [--grapheme-descriptors <PATH>]\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --tree-builder-trace <PATH>\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --cursor-descriptors <PATH>\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --chunk-descriptors <PATH>\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --grapheme-descriptors <PATH>\n        cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --list"
+        "Usage: cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --dir <PATH> [--tree-builder-trace <PATH>] [--cursor-descriptors <PATH>] [--chunk-descriptors <PATH>] [--grapheme-descriptors <PATH>] [--emit-manifest <PATH>]\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --tree-builder-trace <PATH>\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --cursor-descriptors <PATH>\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --chunk-descriptors <PATH>\n       cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --grapheme-descriptors <PATH>\n        cargo run -p xi-rope --features serde --bin export-serde-fixtures -- --list"
     );
 }
 
@@ -140,8 +237,9 @@ fn list_fixtures() {
 fn export_to_directory(
     dir: &std::path::Path,
     fixtures: &[Fixture],
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<Vec<FixtureFileReport>, Box<dyn std::error::Error>> {
     std::fs::create_dir_all(dir)?;
+    let mut reports = Vec::with_capacity(fixtures.len());
 
     for fixture in fixtures {
         let mut content = fixture.json.to_owned();
@@ -149,10 +247,11 @@ fn export_to_directory(
             content.push('\n');
         }
         let path = dir.join(fixture.name);
-        std::fs::write(path, content)?;
+        std::fs::write(&path, content)?;
+        reports.push(FixtureFileReport { name: fixture.name.to_string(), path });
     }
 
-    Ok(())
+    Ok(reports)
 }
 
 #[cfg(all(feature = "serde", feature = "tree_builder_slice_trace"))]
@@ -177,6 +276,154 @@ fn report_grapheme_export(report: &GraphemeDescriptorExportReport) {
         count = report.descriptor_count,
         path = report.file_path.display()
     );
+}
+
+#[cfg(feature = "serde")]
+fn write_manifest(
+    path: &std::path::Path,
+    fixtures: Vec<ManifestFixture>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if fixtures.is_empty() {
+        return Ok(());
+    }
+
+    let rust_commit = xi_rope::serde_fixtures::detect_git_commit()
+        .ok_or("failed to detect git commit for manifest emission")?;
+    let manifest = FixtureManifest {
+        rust_commit,
+        cli_rev: env!("CARGO_PKG_VERSION").to_string(),
+        feature_gates: collect_feature_gates(),
+        fixtures,
+    };
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut json = serde_json::to_string_pretty(&manifest)?;
+    if !json.ends_with('\n') {
+        json.push('\n');
+    }
+    std::fs::write(path, json)?;
+    println!("exported manifest to {}", manifest_display_path(path));
+    Ok(())
+}
+
+#[cfg(feature = "serde")]
+fn collect_feature_gates() -> Vec<String> {
+    let mut gates = Vec::new();
+    if cfg!(feature = "serde") {
+        gates.push("serde".to_string());
+    }
+    if cfg!(feature = "cursor_state") {
+        gates.push("cursor_state".to_string());
+    }
+    if cfg!(feature = "tree_builder_slice_trace") {
+        gates.push("tree_builder_slice_trace".to_string());
+    }
+    gates.sort();
+    gates
+}
+
+#[cfg(feature = "serde")]
+fn compute_payload_hash(path: &std::path::Path) -> Result<String, Box<dyn std::error::Error>> {
+    let data = std::fs::read_to_string(path)?;
+    let value: Value = serde_json::from_str(&data)?;
+    Ok(hash_value(&value))
+}
+
+#[cfg(feature = "serde")]
+fn hash_value(value: &Value) -> String {
+    let mut canonical = String::new();
+    write_canonical_json(value, &mut canonical);
+    let mut hasher = Sha256::new();
+    hasher.update(canonical.as_bytes());
+    let digest = hasher.finalize();
+    hex_encode(&digest)
+}
+
+#[cfg(feature = "serde")]
+fn write_canonical_json(value: &Value, out: &mut String) {
+    match value {
+        Value::Null => out.push_str("null"),
+        Value::Bool(true) => out.push_str("true"),
+        Value::Bool(false) => out.push_str("false"),
+        Value::Number(num) => out.push_str(&num.to_string()),
+        Value::String(s) => {
+            out.push_str(&serde_json::to_string(s).expect("string serialization should succeed"));
+        }
+        Value::Array(items) => {
+            out.push('[');
+            for (idx, item) in items.iter().enumerate() {
+                if idx > 0 {
+                    out.push(',');
+                }
+                write_canonical_json(item, out);
+            }
+            out.push(']');
+        }
+        Value::Object(map) => {
+            out.push('{');
+            let mut keys: Vec<&String> = map.keys().collect();
+            keys.sort();
+            for (idx, key) in keys.iter().enumerate() {
+                if idx > 0 {
+                    out.push(',');
+                }
+                out.push_str(
+                    &serde_json::to_string(key).expect("object key serialization should succeed"),
+                );
+                out.push(':');
+                if let Some(value) = map.get(*key) {
+                    write_canonical_json(value, out);
+                }
+            }
+            out.push('}');
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+fn hex_encode(bytes: &[u8]) -> String {
+    let mut output = String::with_capacity(bytes.len() * 2);
+    use std::fmt::Write;
+    for byte in bytes {
+        let _ = write!(&mut output, "{:02x}", byte);
+    }
+    output
+}
+
+#[cfg(feature = "serde")]
+fn schema_hash_for_regression(name: &str) -> String {
+    match name {
+        "subset_regression.json" => SUBSET_SCHEMA_HASH.to_string(),
+        "delta_regression.json" => DELTA_SCHEMA_HASH.to_string(),
+        "engine_regression.json" => ENGINE_SCHEMA_HASH.to_string(),
+        other => format!("serde_fixtures::{}", other.trim_end_matches(".json")),
+    }
+}
+
+#[cfg(feature = "serde")]
+fn manifest_display_path(path: &std::path::Path) -> String {
+    let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    let relative = workspace_root()
+        .canonicalize()
+        .ok()
+        .and_then(|root| canonical.strip_prefix(&root).ok().map(|p| p.to_owned()));
+    normalize_path(relative.unwrap_or(canonical))
+}
+
+#[cfg(feature = "serde")]
+fn normalize_path(path: std::path::PathBuf) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+#[cfg(feature = "serde")]
+fn workspace_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..")
+}
+
+#[cfg(feature = "serde")]
+fn default_manifest_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(DEFAULT_MANIFEST_RELATIVE)
 }
 
 #[cfg(all(feature = "serde", not(feature = "tree_builder_slice_trace")))]

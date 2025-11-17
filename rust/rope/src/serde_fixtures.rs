@@ -66,7 +66,7 @@ pub fn get_fixture(name: &str) -> Option<&'static Fixture> {
     None
 }
 
-pub(crate) fn detect_git_commit() -> Option<String> {
+pub fn detect_git_commit() -> Option<String> {
     use std::process::Command;
 
     let output = Command::new("git").args(["rev-parse", "HEAD"]).output().ok()?;
