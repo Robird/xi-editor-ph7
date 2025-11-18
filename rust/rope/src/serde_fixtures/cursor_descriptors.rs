@@ -2,6 +2,11 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "cursor_state")]
+use super::snapshots::frames_from_state;
+use super::snapshots::PathFrameSnapshot;
+#[cfg(feature = "cursor_state")]
+use crate::tree::CursorState;
 use crate::{
     helpers::string_leaf::{MAX_LEAF, MIN_LEAF},
     rope::{LinesMetric, Rope, RopeInfo, Utf16CodeUnitsMetric},
@@ -18,6 +23,7 @@ pub enum DescriptorMetric {
     Base,
     Lines,
     Utf16,
+    Breaks,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -37,6 +43,23 @@ pub struct CursorDescriptorFrame {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CursorStateSnapshot {
+    pub cursor_state_enabled: bool,
+    pub position: usize,
+    pub offset_of_leaf: usize,
+    pub is_valid: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub leaf_len: Option<usize>,
+    pub path: Vec<PathFrameSnapshot>,
+    pub metric: DescriptorMetric,
+    pub edit_version: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edit_version_after_edit: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub invalidated_after_edit: Option<bool>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CursorDescriptorFixture {
     pub name: String,
     pub text: String,
@@ -53,6 +76,8 @@ pub struct CursorDescriptorFixture {
     pub is_valid: bool,
     pub offsets: CursorDescriptorOffsets,
     pub leaf_path: Vec<CursorDescriptorFrame>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor_state: Option<CursorStateSnapshot>,
 }
 
 fn default_true() -> bool {
@@ -63,6 +88,36 @@ fn default_true() -> bool {
 pub struct CursorDescriptorExportReport {
     pub file_path: PathBuf,
     pub sample_count: usize,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct CursorStateParams {
+    edit_version: u64,
+    edit_version_after_edit: Option<u64>,
+    invalidated_after_edit: Option<bool>,
+    metric_override: Option<DescriptorMetric>,
+}
+
+impl CursorStateParams {
+    const fn new(edit_version: u64) -> Self {
+        CursorStateParams {
+            edit_version,
+            edit_version_after_edit: None,
+            invalidated_after_edit: None,
+            metric_override: None,
+        }
+    }
+
+    fn with_after_edit(mut self, edit_version_after_edit: u64, invalidated: bool) -> Self {
+        self.edit_version_after_edit = Some(edit_version_after_edit);
+        self.invalidated_after_edit = Some(invalidated);
+        self
+    }
+
+    fn with_metric(mut self, metric: DescriptorMetric) -> Self {
+        self.metric_override = Some(metric);
+        self
+    }
 }
 
 pub fn export_cursor_descriptor_fixtures(
@@ -88,6 +143,7 @@ pub fn cursor_descriptor_samples() -> Vec<CursorDescriptorFixture> {
         sample_lines_tail_boundary(),
         sample_utf16_surrogate_midpoint(),
         sample_utf16_cluster_tail(),
+        sample_breaks_metric_soft_wrap(),
         sample_split_leaf_boundary(),
         sample_deep_tree_midpoint(),
         sample_post_edit_invalidates(),
@@ -107,6 +163,7 @@ fn sample_empty_base() -> CursorDescriptorFixture {
         true,
         None,
         None,
+        Some(CursorStateParams::new(1)),
     )
 }
 
@@ -123,6 +180,7 @@ fn sample_single_leaf_midpoint() -> CursorDescriptorFixture {
         true,
         None,
         None,
+        Some(CursorStateParams::new(2)),
     )
 }
 
@@ -139,6 +197,7 @@ fn sample_single_leaf_end() -> CursorDescriptorFixture {
         true,
         None,
         None,
+        Some(CursorStateParams::new(3)),
     )
 }
 
@@ -156,6 +215,7 @@ fn sample_lines_middle() -> CursorDescriptorFixture {
         true,
         None,
         None,
+        Some(CursorStateParams::new(10)),
     )
 }
 
@@ -174,6 +234,7 @@ fn sample_lines_tail_boundary() -> CursorDescriptorFixture {
         true,
         None,
         None,
+        Some(CursorStateParams::new(11)),
     )
 }
 
@@ -191,6 +252,7 @@ fn sample_utf16_surrogate_midpoint() -> CursorDescriptorFixture {
         true,
         None,
         None,
+        Some(CursorStateParams::new(20)),
     )
 }
 
@@ -209,6 +271,24 @@ fn sample_utf16_cluster_tail() -> CursorDescriptorFixture {
         true,
         None,
         None,
+        Some(CursorStateParams::new(21)),
+    )
+}
+
+fn sample_breaks_metric_soft_wrap() -> CursorDescriptorFixture {
+    let text = "Soft wrap ensures BreaksMetric parity across CRLF\r\nwindows and emoji 🚀 spans.";
+    let rope = Rope::from(text);
+    let cursor = Cursor::new(&rope, 32);
+    fixture_from_descriptor(
+        "breaks_metric_soft_wrap",
+        &rope,
+        cursor.to_descriptor(),
+        DescriptorMetric::Base,
+        "BreaksMetric-aligned cursor captured near soft wrap boundary.",
+        true,
+        None,
+        None,
+        Some(CursorStateParams::new(25).with_metric(DescriptorMetric::Breaks)),
     )
 }
 
@@ -227,6 +307,7 @@ fn sample_split_leaf_boundary() -> CursorDescriptorFixture {
         true,
         None,
         None,
+        Some(CursorStateParams::new(30)),
     )
 }
 
@@ -249,6 +330,7 @@ fn sample_deep_tree_midpoint() -> CursorDescriptorFixture {
         true,
         None,
         None,
+        Some(CursorStateParams::new(31)),
     )
 }
 
@@ -262,7 +344,7 @@ fn sample_post_edit_invalidates() -> CursorDescriptorFixture {
         updated
     };
     fixture_from_descriptor(
-        "descriptor_invalid_after_edit",
+        "cursor_state_invalidated_after_edit",
         &rope,
         cursor.to_descriptor(),
         DescriptorMetric::Base,
@@ -270,6 +352,7 @@ fn sample_post_edit_invalidates() -> CursorDescriptorFixture {
         true,
         Some(edited_text),
         Some(false),
+        Some(CursorStateParams::new(40).with_after_edit(41, true)),
     )
 }
 
@@ -287,6 +370,7 @@ fn sample_invalid_descriptor() -> CursorDescriptorFixture {
         false,
         None,
         None,
+        Some(CursorStateParams::new(50)),
     )
 }
 
@@ -300,6 +384,7 @@ fn fixture_from_descriptor(
     expect_apply: bool,
     edited_text: Option<String>,
     expect_apply_after_edit: Option<bool>,
+    cursor_state_params: Option<CursorStateParams>,
 ) -> CursorDescriptorFixture {
     let offsets = CursorDescriptorOffsets {
         offset_of_leaf: descriptor.offset_of_leaf(),
@@ -316,6 +401,7 @@ fn fixture_from_descriptor(
             child_offset: frame.child_offset(),
         })
         .collect();
+    let cursor_state = cursor_state_snapshot(&descriptor, metric, cursor_state_params);
     CursorDescriptorFixture {
         name: name.to_string(),
         text: String::from(rope),
@@ -328,6 +414,7 @@ fn fixture_from_descriptor(
         is_valid: descriptor.is_valid(),
         offsets,
         leaf_path,
+        cursor_state,
     }
 }
 
@@ -354,4 +441,35 @@ fn generate_leaf_payload() -> String {
     }
     payload.truncate(MIN_LEAF);
     payload
+}
+
+fn cursor_state_snapshot(
+    descriptor: &CursorDescriptor<RopeInfo, String>,
+    fixture_metric: DescriptorMetric,
+    params: Option<CursorStateParams>,
+) -> Option<CursorStateSnapshot> {
+    #[cfg(feature = "cursor_state")]
+    {
+        return params.map(|params| {
+            let state = CursorState::from_descriptor(descriptor);
+            let metric = params.metric_override.unwrap_or(fixture_metric);
+            CursorStateSnapshot {
+                cursor_state_enabled: true,
+                position: state.position(),
+                offset_of_leaf: state.offset_of_leaf(),
+                is_valid: state.is_valid(),
+                leaf_len: descriptor.leaf_len(),
+                path: frames_from_state(&state),
+                metric,
+                edit_version: params.edit_version,
+                edit_version_after_edit: params.edit_version_after_edit,
+                invalidated_after_edit: params.invalidated_after_edit,
+            }
+        });
+    }
+    #[cfg(not(feature = "cursor_state"))]
+    {
+        let _ = (descriptor, fixture_metric, params);
+        return None;
+    }
 }

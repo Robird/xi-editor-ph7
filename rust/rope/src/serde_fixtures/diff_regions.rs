@@ -302,10 +302,14 @@ fn write_sample_file(
 }
 
 fn relative_fixture_path(path: &Path) -> String {
-    let workspace = workspace_root();
-    path.strip_prefix(&workspace)
-        .map(|p| p.to_string_lossy().replace('\\', "/"))
-        .unwrap_or_else(|_| path.to_string_lossy().replace('\\', "/"))
+    let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    workspace_root()
+        .canonicalize()
+        .ok()
+        .and_then(|root| canonical.strip_prefix(&root).ok().map(|p| p.to_owned()))
+        .unwrap_or(canonical)
+        .to_string_lossy()
+        .replace('\\', "/")
 }
 
 fn line_span(index: &LineIndex, range: Option<&RangeSnapshot>, fallback: usize) -> [usize; 2] {
