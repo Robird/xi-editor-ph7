@@ -52,6 +52,8 @@ const DIFF_REGIONS_SCHEMA_HASH: &str = "diff_regions@1.0.0";
 const SEARCH_SPANS_SCHEMA_HASH: &str = "search_spans@1.0.0";
 #[cfg(feature = "serde")]
 const TREE_BUILDER_TRACE_SCHEMA_HASH: &str = "tree_builder_slice_trace@1.0.0";
+#[cfg(feature = "serde")]
+const METRIC_WINDOWS_SCHEMA_HASH: &str = "metric_windows@1.0.0";
 
 #[cfg(feature = "serde")]
 #[derive(Serialize)]
@@ -60,6 +62,8 @@ struct FixtureManifest {
     cli_rev: String,
     feature_gates: Vec<String>,
     fixtures: Vec<ManifestFixture>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    metric_windows: Vec<MetricWindowsEntry>,
 }
 
 #[cfg(feature = "serde")]
@@ -70,6 +74,23 @@ struct ManifestFixture {
     count: usize,
     schema_hash: String,
     payload_hash: String,
+}
+
+#[cfg(feature = "serde")]
+#[derive(Serialize)]
+struct MetricWindowsEntry {
+    fixture: String,
+    schema_hash: String,
+    schema_version: String,
+    window_schema: String,
+    windows: Vec<MetricWindow>,
+}
+
+#[cfg(feature = "serde")]
+#[derive(Serialize)]
+struct MetricWindow {
+    kind: String,
+    count: usize,
 }
 
 #[cfg(feature = "serde")]
@@ -107,6 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut search_dir: Option<PathBuf> = None;
     let mut manifest_path: Option<PathBuf> = Some(default_manifest_path());
     let mut manifest_entries: Vec<ManifestFixture> = Vec::new();
+    let mut metric_windows: Vec<MetricWindowsEntry> = Vec::new();
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -177,20 +199,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    if output_dir.is_none()
-        && trace_dir.is_none()
-        && cursor_dir.is_none()
-        && chunk_dir.is_none()
-        && grapheme_dir.is_none()
-        && breaks_dir.is_none()
-        && diff_dir.is_none()
-        && search_dir.is_none()
+    let stage_d_root = output_dir.clone().unwrap_or_else(default_fixture_root);
+
+    if cursor_dir.is_none() {
+        cursor_dir = Some(stage_d_root.join("cursor_descriptors"));
+    }
+    if chunk_dir.is_none() {
+        chunk_dir = Some(stage_d_root.join("chunk_descriptors"));
+    }
+    if grapheme_dir.is_none() {
+        grapheme_dir = Some(stage_d_root.join("grapheme_descriptors"));
+    }
+    if breaks_dir.is_none() {
+        breaks_dir = Some(stage_d_root.join("breaks_descriptors"));
+    }
+    if diff_dir.is_none() {
+        diff_dir = Some(stage_d_root.join("diff_regions"));
+    }
+    if search_dir.is_none() {
+        search_dir = Some(stage_d_root.join("search_spans"));
+    }
+    #[cfg(feature = "tree_builder_slice_trace")]
     {
-        print_usage();
-        return Err(
-            "missing required --dir <PATH>, --tree-builder-trace <PATH>, --cursor-descriptors <PATH>, --chunk-descriptors <PATH>, --grapheme-descriptors <PATH>, --breaks-descriptors <PATH>, --diff-regions <PATH>, or --search-spans <PATH> argument"
-                .into(),
-        );
+        if trace_dir.is_none() {
+            trace_dir = Some(stage_d_root.join("tree_builder_slice"));
+        }
     }
 
     if let Some(dir) = output_dir {
@@ -218,6 +251,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             schema_hash: TREE_BUILDER_TRACE_SCHEMA_HASH.to_string(),
             payload_hash,
         });
+        record_metric_windows(
+            &mut metric_windows,
+            report.file_name.as_str(),
+            TREE_BUILDER_TRACE_SCHEMA_HASH,
+            vec![MetricWindow {
+                kind: "tree_builder_trace_events".to_string(),
+                count: report.event_count,
+            }],
+        );
     }
 
     if let Some(dir) = cursor_dir {
@@ -235,6 +277,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             schema_hash: CURSOR_SCHEMA_HASH.to_string(),
             payload_hash,
         });
+        record_metric_windows(
+            &mut metric_windows,
+            CURSOR_DESCRIPTOR_FILENAME,
+            CURSOR_SCHEMA_HASH,
+            vec![MetricWindow {
+                kind: "cursor_descriptors".to_string(),
+                count: report.sample_count,
+            }],
+        );
     }
 
     if let Some(dir) = chunk_dir {
@@ -248,6 +299,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             schema_hash: CHUNK_SCHEMA_HASH.to_string(),
             payload_hash,
         });
+        record_metric_windows(
+            &mut metric_windows,
+            CHUNK_DESCRIPTOR_FILENAME,
+            CHUNK_SCHEMA_HASH,
+            vec![
+                MetricWindow { kind: "chunk_windows".to_string(), count: report.chunk_count },
+                MetricWindow { kind: "line_windows".to_string(), count: report.line_count },
+            ],
+        );
     }
 
     if let Some(dir) = grapheme_dir {
@@ -261,6 +321,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             schema_hash: GRAPHEME_SCHEMA_HASH.to_string(),
             payload_hash,
         });
+        record_metric_windows(
+            &mut metric_windows,
+            GRAPHEME_DESCRIPTOR_FILENAME,
+            GRAPHEME_SCHEMA_HASH,
+            vec![MetricWindow {
+                kind: "grapheme_windows".to_string(),
+                count: report.descriptor_count,
+            }],
+        );
     }
 
     if let Some(dir) = breaks_dir {
@@ -274,6 +343,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             schema_hash: BREAKS_SCHEMA_HASH.to_string(),
             payload_hash,
         });
+        record_metric_windows(
+            &mut metric_windows,
+            BREAKS_DESCRIPTOR_FILENAME,
+            BREAKS_SCHEMA_HASH,
+            vec![MetricWindow {
+                kind: "break_windows".to_string(),
+                count: report.descriptor_count,
+            }],
+        );
     }
 
     if let Some(dir) = diff_dir {
@@ -287,6 +365,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             schema_hash: DIFF_REGIONS_SCHEMA_HASH.to_string(),
             payload_hash,
         });
+        record_metric_windows(
+            &mut metric_windows,
+            DIFF_REGIONS_FILENAME,
+            DIFF_REGIONS_SCHEMA_HASH,
+            vec![MetricWindow { kind: "diff_windows".to_string(), count: report.case_count }],
+        );
     }
 
     if let Some(dir) = search_dir {
@@ -300,12 +384,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             schema_hash: SEARCH_SPANS_SCHEMA_HASH.to_string(),
             payload_hash,
         });
+        record_metric_windows(
+            &mut metric_windows,
+            SEARCH_SPANS_FILENAME,
+            SEARCH_SPANS_SCHEMA_HASH,
+            vec![MetricWindow { kind: "search_windows".to_string(), count: report.case_count }],
+        );
     }
 
     if let Some(path) = manifest_path {
         if !manifest_entries.is_empty() {
             manifest_entries.sort_by(|a, b| a.name.cmp(&b.name));
-            write_manifest(path.as_path(), manifest_entries)?;
+            write_manifest(path.as_path(), manifest_entries, metric_windows)?;
         }
     }
 
@@ -420,6 +510,7 @@ fn report_tree_builder_trace_export(report: &TreeBuilderTraceExportReport) {
 fn write_manifest(
     path: &std::path::Path,
     fixtures: Vec<ManifestFixture>,
+    metric_windows: Vec<MetricWindowsEntry>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if fixtures.is_empty() {
         return Ok(());
@@ -432,6 +523,7 @@ fn write_manifest(
         cli_rev: env!("CARGO_PKG_VERSION").to_string(),
         feature_gates: collect_feature_gates(),
         fixtures,
+        metric_windows,
     };
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -562,6 +654,35 @@ fn workspace_root() -> PathBuf {
 #[cfg(feature = "serde")]
 fn default_manifest_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(DEFAULT_MANIFEST_RELATIVE)
+}
+
+#[cfg(feature = "serde")]
+fn default_fixture_root() -> PathBuf {
+    workspace_root().join("tests/xi.Core.Tests/Fixtures")
+}
+
+#[cfg(feature = "serde")]
+fn record_metric_windows(
+    ledger: &mut Vec<MetricWindowsEntry>,
+    fixture: &str,
+    schema_hash: &str,
+    windows: Vec<MetricWindow>,
+) {
+    if windows.is_empty() {
+        return;
+    }
+    ledger.push(MetricWindowsEntry {
+        fixture: fixture.to_string(),
+        schema_hash: schema_hash.to_string(),
+        schema_version: schema_version_from_hash(schema_hash),
+        window_schema: METRIC_WINDOWS_SCHEMA_HASH.to_string(),
+        windows,
+    });
+}
+
+#[cfg(feature = "serde")]
+fn schema_version_from_hash(schema_hash: &str) -> String {
+    schema_hash.split('@').nth(1).unwrap_or(schema_hash).to_string()
 }
 
 #[cfg(all(feature = "serde", feature = "tree_builder_slice_trace"))]
