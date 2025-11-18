@@ -90,6 +90,7 @@ pub struct CursorDescriptorExportReport {
     pub sample_count: usize,
 }
 
+#[cfg_attr(not(feature = "cursor_state"), allow(dead_code))]
 #[derive(Clone, Copy, Debug)]
 struct CursorStateParams {
     edit_version: u64,
@@ -450,7 +451,7 @@ fn cursor_state_snapshot(
 ) -> Option<CursorStateSnapshot> {
     #[cfg(feature = "cursor_state")]
     {
-        return params.map(|params| {
+        params.map(|params| {
             let state = CursorState::from_descriptor(descriptor);
             let metric = params.metric_override.unwrap_or(fixture_metric);
             CursorStateSnapshot {
@@ -465,11 +466,11 @@ fn cursor_state_snapshot(
                 edit_version_after_edit: params.edit_version_after_edit,
                 invalidated_after_edit: params.invalidated_after_edit,
             }
-        });
+        })
     }
     #[cfg(not(feature = "cursor_state"))]
     {
         let _ = (descriptor, fixture_metric, params);
-        return None;
+        None
     }
 }

@@ -27,18 +27,9 @@ mod serde_breaks_export {
         assert_eq!(payload.metadata.schema_version, "1.0.0");
         assert_eq!(payload.metadata.descriptor_count, payload.break_sets.len());
         assert!(!payload.break_sets.is_empty(), "expected at least one break set");
-        assert!(payload
-            .break_sets
-            .iter()
-            .all(|set| set.metric == BreakMetricKind::BreaksMetric));
+        assert!(payload.break_sets.iter().all(|set| set.metric == BreakMetricKind::BreaksMetric));
         assert!(payload.break_sets.iter().any(|set| !set.leaf_runs.is_empty()));
-        assert!(payload
-            .break_sets
-            .iter()
-            .any(|set| set.tags.iter().any(|tag| tag == "emoji")));
-        assert!(payload
-            .break_sets
-            .iter()
-            .any(|set| set.break_count == set.break_offsets.len()));
+        assert!(payload.break_sets.iter().any(|set| set.tags.iter().any(|tag| tag == "emoji")));
+        assert!(payload.break_sets.iter().any(|set| set.break_count == set.break_offsets.len()));
     }
 }

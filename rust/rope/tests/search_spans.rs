@@ -4,9 +4,7 @@ mod serde_search_export {
     use std::process::Command;
 
     use tempfile::tempdir;
-    use xi_rope::serde_fixtures::search_spans::{
-        SearchSpansFile, SEARCH_SPANS_FILENAME,
-    };
+    use xi_rope::serde_fixtures::search_spans::{SearchSpansFile, SEARCH_SPANS_FILENAME};
 
     #[test]
     fn exporter_creates_search_spans_file() {
